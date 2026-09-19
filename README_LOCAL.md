@@ -5,16 +5,35 @@
 Всё, что написано про проблемы — проверенные на этой машине факты, а не
 предположения.
 
-Проект не наш: исходники склонированы с GitHub, ничего обратно не отправляется.
+Проект чужой (Apache License 2.0), но у нас есть **свой форк**:
+`origin` → https://github.com/ASXRND/Termix, `upstream` → чужой репозиторий.
+Все правки лежат в ветке `local/macos-pty-fixes` и запушены в форк (раздел 11).
 
-| Параметр                    | Значение                                                   |
-| --------------------------- | ---------------------------------------------------------- |
-| Upstream                    | https://github.com/Termix-SSH/Termix (`main`)              |
-| Коммит клона                | `9c04860` (18.09.2026, `chore: sync Crowdin translations`) |
-| Версия проекта              | 2.7.1                                                      |
-| Electron / electron-builder | 43.4.1 / 26.15.3                                           |
-| node-pty                    | 1.1.0                                                      |
-| Сборка на                   | macOS 27.0, arm64 (Xcode 26.6, Node v24.16.0, npm 12.0.2)  |
+| Параметр                    | Значение                                                         |
+| --------------------------- | ---------------------------------------------------------------- |
+| Upstream                    | https://github.com/Termix-SSH/Termix (`main`)                    |
+| Коммит клона                | `9c04860` (18.09.2026, `chore: sync Crowdin translations`)       |
+| Версия проекта              | 2.7.1                                                            |
+| Electron / electron-builder | 43.4.1 / 26.15.3                                                 |
+| node-pty                    | 1.1.0                                                            |
+| Форк (`origin`)             | https://github.com/ASXRND/Termix                                 |
+| Ветка с правками            | `local/macos-pty-fixes` (трекает `origin/local/macos-pty-fixes`) |
+| Сборка на                   | macOS 27.0, arm64 (Xcode 26.6, Node v24.16.0, npm 12.0.2)        |
+
+---
+
+## 0. Статус на 19.09.2026
+
+| Что                              | Состояние                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| `/Applications/Termix.app`       | собрано из этого клона, ad-hoc подписано, **работает**                       |
+| Локальный терминал               | проверен трижды (GUI-репро, упакованное приложение, копия в `/Applications`) |
+| `spawn-helper` внутри приложения | `-rwxr-xr-x` + пропатченная версия (см. раздел 3.1)                          |
+| Данные (хосты, ключи)            | на месте: `~/Library/Application Support/termix`                             |
+| Homebrew-версия                  | удалена, `brew list --cask` её не показывает                                 |
+| Форк и ветка                     | https://github.com/ASXRND/Termix → `local/macos-pty-fixes` запушена          |
+| Бэкап ветки                      | `~/Desktop/termix-local-fixes.bundle` (12 МБ, `git bundle verify` → ok)      |
+| Коммиты                          | `554f7d1` (фиксы), `8186ce6` и последующие `docs:` — раздел 12               |
 
 ---
 
@@ -411,11 +430,11 @@ npm ci && npm run build:mac-local
 
 ### 11.4. Варианты хранения правок
 
-| Вариант                                                            | Плюсы                                                            | Минусы                                                     |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| Локальные коммиты в ветке `local/macos-pty-fixes` (текущий)        | ничего не публикуется, история есть, можно бэкапить `git bundle` | нет внешнего бэкапа                                        |
-| Форк на GitHub (создаётся через веб-интерфейс, `gh` не установлен) | бэкап, можно ставить приватным, удобно обновлять                 | нужен аккаунт и один ручной шаг в браузере                 |
-| Пул-реквест в upstream                                             | патчи перестают быть «нашими»: автор чинит у себя                | ревью, сроки, часть правок дублирует уже открытый PR #1417 |
+| Вариант                                           | Плюсы                                                            | Минусы                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| Локальные коммиты в ветке `local/macos-pty-fixes` | ничего не публикуется, история есть, можно бэкапить `git bundle` | нет внешнего бэкапа                                        |
+| **Форк `ASXRND/Termix` — используется сейчас**    | внешний бэкап, удобно обновлять, можно перевести в приватный     | публичный форк с именем Termix (бренд не наш, §6)          |
+| Пул-реквест в upstream                            | патчи перестают быть «нашими»: автор чинит у себя                | ревью, сроки, часть правок дублирует уже открытый PR #1417 |
 
 `git bundle` для локального бэкапа:
 
@@ -429,3 +448,61 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 резолвится корректно (PR #1417 влит и попал в релиз), можно вернуться на
 `brew install --cask termix` — тогда наши патчи не нужны, а `/Applications`
 можно заменить официальной сборкой.
+
+Форк готов к пул-реквесту: GitHub отдаёт ссылку
+`https://github.com/ASXRND/Termix/pull/new/local/macos-pty-fixes`, целевой
+репозиторий — `Termix-SSH/Termix`.
+
+---
+
+## 12. История коммитов (ветка `local/macos-pty-fixes`)
+
+| Коммит    | Сообщение                                                        | Содержимое                                                                                                                                                                                              |
+| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `554f7d1` | `fix(macos): make the local terminal work (posix_spawnp failed)` | 6 файлов, +947 строк: `scripts/patch-node-pty.cjs` (новый), `scripts/build-mac-local.cjs` (новый), `packaging/build/after-pack.cjs`, `scripts/patch-nan.cjs`, `package.json`, `README_LOCAL.md` (новый) |
+| `8186ce6` | `docs: указать форк origin и команды push/восстановления`        | актуализация раздела 11                                                                                                                                                                                 |
+| далее     | коммиты `docs:` — обновления этого файла                         | разделы 0, 12, 13 и правки по ходу работы                                                                                                                                                               |
+| `9c04860` | `chore: sync Crowdin translations`                               | база: клон upstream, наши коммиты идут поверх него                                                                                                                                                      |
+
+Полезные команды:
+
+```bash
+git --no-pager log --oneline --stat local/macos-pty-fixes   # что менялось
+git show 554f7d1                                            # полный diff фикса
+git --no-pager log --oneline --graph --all -10              # картина ветвей
+```
+
+---
+
+## 13. Шпаргалка команд
+
+```bash
+# 1. запустить приложение
+open -a Termix
+
+# 2. собрать после правок кода и обновить установленную копию
+cd /Users/aleksandrhohon/Desktop/development_locall/termix
+npm run build:mac-local
+osascript -e 'quit app "Termix"'
+rm -rf /Applications/Termix.app && cp -R release/mac-arm64/Termix.app /Applications/
+open -a Termix
+
+# 3. зафиксировать правки и отправить в свой форк
+git checkout local/macos-pty-fixes
+git add -A && git commit -m "..." && git push
+
+# 4. подтянуть изменения из чужого репозитория
+git fetch upstream
+git checkout main && git merge --ff-only upstream/main
+git checkout local/macos-pty-fixes && git rebase main
+npm ci && npm run build:mac-local
+
+# 5. проверить состояние
+git remote -v && git branch -vv && git status --short
+stat -f '%Sp' /Applications/Termix.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper
+codesign --verify --deep /Applications/Termix.app && echo "подпись ок"
+tail -20 "$HOME/Library/Application Support/termix/termix-main.log"
+
+# 6. локальный бэкап ветки (страховка от потери диска)
+git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
+```
