@@ -103,6 +103,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener(channel, listener);
   },
 
+  localFs: {
+    available: () => ipcRenderer.invoke("local-fs:available"),
+    home: () => ipcRenderer.invoke("local-fs:home"),
+    list: (root, rel) => ipcRenderer.invoke("local-fs:list", root, rel),
+    read: (root, rel) => ipcRenderer.invoke("local-fs:read", root, rel),
+    open: (target) => ipcRenderer.invoke("local-fs:open", target),
+  },
+
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
 });
 

@@ -20,6 +20,7 @@ import { useAiAvailability } from "@/hooks/use-ai-availability";
 export type RailView =
   | "hosts"
   | "credentials"
+  | "local-explorer"
   | "termix-id"
   | "quick-connect"
   | "serial"

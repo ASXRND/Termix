@@ -1,3 +1,5 @@
+import type { LocalFsEntry, LocalFsReadResult } from "@/types/ui-types";
+
 interface ServerConfig {
   serverUrl?: string;
   allowInvalidCertificate?: boolean;
@@ -192,6 +194,17 @@ export interface ElectronAPI {
     sessionId: string,
     callback: (exitCode: number) => void,
   ): () => void;
+
+  localFs?: {
+    available(): Promise<boolean>;
+    home(): Promise<string>;
+    list(
+      root: string,
+      rel: string,
+    ): Promise<{ path: string; entries: LocalFsEntry[]; error?: string }>;
+    read(root: string, rel: string): Promise<LocalFsReadResult>;
+    open(target: string): Promise<boolean>;
+  };
 }
 
 declare global {

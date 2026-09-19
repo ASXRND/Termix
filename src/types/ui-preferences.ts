@@ -158,6 +158,7 @@ const ALL_HIDEABLE_RAIL_VIEWS = [
   "alerts",
   "fleets",
   "workspaces",
+  "local-explorer",
   "network_graph",
   "homepage",
   "ai",

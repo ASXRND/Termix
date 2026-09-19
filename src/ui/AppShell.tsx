@@ -100,6 +100,13 @@ const AiPanel = lazy(() =>
 const HistoryPanel = lazy(() =>
   import("@/sidebar/HistoryPanel").then((m) => ({ default: m.HistoryPanel })),
 );
+// Lazy-loaded so the right dock's first paint stays cheap.
+const LocalFileExplorer = lazy(() =>
+  import("@/features/local-explorer/LocalFileExplorer").then((m) => ({
+    default: m.LocalFileExplorer,
+  })),
+);
+
 const SessionLogsPanel = lazy(() =>
   import("@/sidebar/SessionLogsPanel").then((m) => ({
     default: m.SessionLogsPanel,
@@ -1685,6 +1692,9 @@ export function AppShell({
       ];
     });
     setActiveTabId(id);
+    // VS Code parity: opening a local terminal auto-opens the local file
+    // explorer in the right dock (only on desktop, only if not already open).
+    if (!isMobile) setRightRailView((current) => current ?? "local-explorer");
     return id;
   }
 
@@ -2508,6 +2518,18 @@ export function AppShell({
                   }),
                 });
                 if (isMobile) setSidebarOpen(false);
+              }}
+            />
+          </div>
+        )}
+
+        {railView === "local-explorer" && (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <LocalFileExplorer
+              onClose={() => {
+                // The panel can live in either dock; close whichever hosts it.
+                if (rightRailView === "local-explorer") setRightRailView(null);
+                else setSidebarOpen(false);
               }}
             />
           </div>

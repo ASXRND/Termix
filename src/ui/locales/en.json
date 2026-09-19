@@ -665,7 +665,7 @@
     "home": "Home",
     "terminal": "Terminal",
     "localTerminal": "Local Terminal",
-    "docker": "Docker",
+    "localExplorer": "Files",
     "tunnels": "Tunnels",
     "fileManager": "File Manager",
     "serverStats": "Host Metrics",
@@ -4667,5 +4667,20 @@
     },
     "seconds": "seconds",
     "secondsShort": "{{count}}s"
+  },
+  "localExplorer": {
+    "title": "Files",
+    "home": "Go to home folder",
+    "refresh": "Refresh",
+    "close": "Close panel",
+    "closePreview": "Close preview",
+    "loading": "Loading preview...",
+    "error": "Failed to read file",
+    "binary": "Binary file — preview is not available",
+    "openExternal": "Open in default app",
+    "emptyDir": "Folder is empty",
+    "notAvailable": "Local file access is only available in the desktop app",
+    "homeError": "Failed to resolve the home directory",
+    "retry": "Retry"
   }
 }

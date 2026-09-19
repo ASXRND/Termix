@@ -506,3 +506,39 @@ tail -20 "$HOME/Library/Application Support/termix/termix-main.log"
 # 6. локальный бэкап ветки (страховка от потери диска)
 git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 ```
+
+---
+
+## 14. Локальный проводник (Files, 19.09.2026)
+
+Фича «проводник как в VS Code» для **локальной** машины: файловое дерево
+домашней папки с предпросмотром файлов, живёт в **правом доке**. Док
+рендерится вне split-контейнера, поэтому панель остаётся видимой при любой
+нарезке терминальной области (2/3/6 панелей). При открытии вкладки локального
+терминала док с файлами открывается сам (если пользователь его не закрыл и
+не в мобильном режиме).
+
+Как это работает:
+
+| Слой             | Файл/точка                                            | Что делает                                                                                             |
+| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| IPC main         | `electron/local-fs.cjs` (новый) + хук в `main.cjs`    | `local-fs:list/read/open`: readdir + превью (текст ≤512 КБ, картинки в base64), guard от `../`-обхода |
+| preload          | `electron/preload.js` → `electronAPI.localFs`         | whitelisted-каналы для рендерера                                                                      |
+| API-клиент       | `src/ui/features/local-explorer/localFsApi.ts`        | degrade в браузерной сборке (`localFsAvailable()`)                                                     |
+| дерево           | `localFsTree.ts` (чистые функции) + `LocalFileTree.tsx`| ленивые дети, только папки раскрываются                                                                |
+| панель           | `LocalFileExplorer.tsx` + `LocalFilePreview.tsx`      | дерево + превью (текст/картинка/бинарник → «открыть внешне»)                                           |
+| правый док       | `rail-items.ts`: id `local-explorer`, `rightDockable` | иконка FolderTree, electronOnly; кейс в `AppShell.tsx` (renderSidebarPanels)                            |
+| автопоказ        | `AppShell.tsx`, useEffect по `activeTabType`          | `setRightRailView(current ?? "local-explorer")` при вкладке `local-terminal`                           |
+| типы             | `ui-types.ts` (`LocalFsEntry`, `LocalFsReadResult`), `ui-preferences.ts` (`HideableRailView`), `electron.d.ts` (`localFs`) |   |
+| i18n             | `en.json` / `translated/ru_RU.json`: `nav.localExplorer`, блок `localExplorer`                        | en/ru синхронизированы (край файла)                                                                     |
+| тесты            | `src/ui/tests/features/local-explorer.test.ts`, обновлён `rail-items.test.ts`                         | дерево (toRel/parentOfHome/sort), ключи локалей, списки рейла                                           |
+
+Корень дерева — `dirname($HOME)` (домашняя папка видна как узел, выше неё
+тоже можно подняться). Скрыты: `.DS_Store`, `Library`, `proc`, `sys`, `dev`,
+`run`, `Volumes`, `mnt`, `boot`, `cdrom`, `lost+found`; лимит 500 записей на
+папку, папки раньше файлов.
+
+Проверено на этой машине: `node --check` × 3, `vitest run` — 2616 passed,
+`eslint` на всех затронутых файлах — 0, `tsc -b --force` — 0, `vite build` — 0.
+
+Откат фичи целиком: `git checkout main -- electron/ src/ui/sidebar/ src/ui/AppShell.tsx src/types/ src/ui/locales/ && rm -rf src/ui/features/local-explorer src/ui/tests/features/local-explorer.test.ts` (коммит не делала — правки пока только в working tree).

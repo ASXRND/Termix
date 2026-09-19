@@ -60,6 +60,7 @@ describe("RAIL_ITEMS", () => {
       "session-logs",
       "split-screen",
       "workspaces",
+      "local-explorer",
       "local-terminal",
       "network_graph",
     ]);
@@ -135,6 +136,7 @@ describe("RAIL_ITEMS", () => {
       "ai",
       "history",
       "session-logs",
+      "local-explorer",
       "alerts",
     ]);
   });

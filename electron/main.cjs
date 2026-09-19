@@ -2913,6 +2913,8 @@ ipcMain.handle("clipboard-write-text", (_event, text) => {
 
 ipcMain.handle("clipboard-read-text", () => clipboard.readText());
 
+require("./local-fs.cjs").registerLocalFsIpc(ipcMain);
+
 ipcMain.handle("local-terminal-start", (event, dimensions = {}) => {
   const cols = Math.min(500, Math.max(2, Number(dimensions.cols) || 80));
   const rows = Math.min(300, Math.max(1, Number(dimensions.rows) || 24));

@@ -467,3 +467,14 @@ export type SnippetFolder = {
   icon: FolderIconId;
   open: boolean;
 };
+
+export type LocalFsEntry = {
+  name: string;
+  isDir: boolean;
+};
+
+export type LocalFsReadResult =
+  | { kind: "text"; content: string }
+  | { kind: "image"; mime: string; base64: string }
+  | { kind: "binary" }
+  | { error: string };

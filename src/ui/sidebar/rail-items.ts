@@ -3,6 +3,7 @@ import {
   Braces,
   Clock,
   Fingerprint,
+  FolderTree,
   Hammer,
   KeyRound,
   LayoutPanelLeft,
@@ -160,6 +161,14 @@ export const RAIL_ITEMS: RailItemDef[] = [
     icon: LayoutTemplate,
     labelKey: "nav.workspaces",
     separatorAfter: true,
+  },
+  {
+    id: "local-explorer",
+    icon: FolderTree,
+    labelKey: "nav.localExplorer",
+    separatorAfter: true,
+    rightDockable: true,
+    electronOnly: true,
   },
   {
     id: "local-terminal",
