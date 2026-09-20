@@ -4681,6 +4681,12 @@
     "emptyDir": "Folder is empty",
     "notAvailable": "Local file access is only available in the desktop app",
     "homeError": "Failed to resolve the home directory",
+    "followOn": "Following the terminal folder — click to pin a folder",
+    "followOff": "Folder pinned — click to follow the terminal again",
+    "pathLabel": "Folder path",
+    "pathPlaceholder": "/path/to/folder",
+    "go": "Open folder",
+    "invalidPath": "Enter an absolute path, e.g. /Users/name/project",
     "retry": "Retry"
   }
 }

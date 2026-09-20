@@ -102,6 +102,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
   },
+  onLocalTerminalCwd: (sessionId, callback) => {
+    const channel = `local-terminal:cwd:${sessionId}`;
+    const listener = (_event, dir) => callback(dir);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
 
   localFs: {
     available: () => ipcRenderer.invoke("local-fs:available"),

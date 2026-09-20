@@ -41,7 +41,10 @@ export function addTreeChild(
   entries: LocalFsEntry[],
 ): LocalFsNode {
   if (parentRel === ROOT_REL) {
-    return { ...tree, children: buildChildren(tree.absPath, ROOT_REL, entries) };
+    return {
+      ...tree,
+      children: buildChildren(tree.absPath, ROOT_REL, entries),
+    };
   }
   const segments = parentRel.split("/");
   const walk = (node: LocalFsNode, depth: number): LocalFsNode => {
@@ -76,6 +79,12 @@ export function collapseTree(
     next[key] = true;
   }
   return next;
+}
+
+/** Every ancestor rel of a path, from the root downwards (excl. root). */
+export function relAncestors(rel: string): string[] {
+  const parts = rel.split("/").filter(Boolean);
+  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
 }
 
 const relDepth = (rel: string) =>

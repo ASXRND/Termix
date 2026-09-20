@@ -194,6 +194,11 @@ export interface ElectronAPI {
     sessionId: string,
     callback: (exitCode: number) => void,
   ): () => void;
+  /** Fires when the shell reports a working directory change (OSC 7). */
+  onLocalTerminalCwd(
+    sessionId: string,
+    callback: (dir: string) => void,
+  ): () => void;
 
   localFs?: {
     available(): Promise<boolean>;

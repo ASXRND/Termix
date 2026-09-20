@@ -50,8 +50,63 @@ export function parentOfHome(home: string): string {
 
 /** Strips the root prefix to compute a relative path for the tree. */
 export function toRel(root: string, abs: string): string {
-  const normRoot = root.endsWith("/") && root.length > 1 ? root.slice(0, -1) : root;
+  const normRoot =
+    root.endsWith("/") && root.length > 1 ? root.slice(0, -1) : root;
   if (abs === normRoot) return "";
   if (abs.startsWith(normRoot + "/")) return abs.slice(normRoot.length + 1);
   return abs;
+}
+
+/**
+ * Normalizes an absolute directory path coming from the shell (OSC 7) or from
+ * manual input: URL-decodes, strips a trailing slash, rejects non-absolute or
+ * obviously bogus input. Returns null when the path cannot be a directory.
+ */
+export function normalizeDir(dir: string): string | null {
+  if (typeof dir !== "string" || !dir.trim()) return null;
+  let value = dir.trim();
+  // OSC 7 may deliver percent-encoded paths (spaces etc.).
+  if (/%[0-9a-fA-F]{2}/.test(value)) {
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      // keep the raw value when decoding fails
+    }
+  }
+  if (!value.startsWith("/")) return null;
+  if (value.length > 1 && value.endsWith("/")) value = value.slice(0, -1);
+  if (value.includes("\0")) return null;
+  return value;
+}
+
+/**
+ * The directory itself followed by every ancestor up to "/". Used to fall back
+ * to a readable folder when the shell reports a path that is gone or denied.
+ */
+export function ancestorsOf(dir: string): string[] {
+  const normalized = normalizeDir(dir);
+  if (!normalized) return [];
+  const parts = normalized.split("/").filter(Boolean);
+  const out: string[] = [];
+  for (let i = parts.length; i > 0; i -= 1) {
+    out.push("/" + parts.slice(0, i).join("/"));
+  }
+  out.push("/");
+  return out;
+}
+
+/**
+ * First directory in the ancestor chain that the FS lets us list, or null when
+ * even "/" fails. The probe is injected so the caller decides how to read the
+ * filesystem (and so this stays unit-testable).
+ */
+export async function firstListable(
+  dir: string,
+  probe: (candidate: string) => Promise<{ error?: string }>,
+): Promise<string | null> {
+  for (const candidate of ancestorsOf(dir)) {
+    const result = await probe(candidate);
+    if (!result.error) return candidate;
+  }
+  return null;
 }

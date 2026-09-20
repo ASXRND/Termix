@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   addTreeChild,
   buildChildren,
@@ -6,7 +6,18 @@ import {
   joinRel,
   rebuildTree,
 } from "@/features/local-explorer/localFsTree";
-import { parentOfHome, toRel } from "@/features/local-explorer/localFsApi";
+import {
+  ancestorsOf,
+  firstListable,
+  normalizeDir,
+  parentOfHome,
+  toRel,
+} from "@/features/local-explorer/localFsApi";
+import {
+  getLocalCwd,
+  reportLocalCwd,
+  subscribeLocalCwd,
+} from "@/features/local-explorer/localCwdStore";
 
 describe("joinRel", () => {
   it("joins names without a leading slash at the root", () => {
@@ -123,5 +134,115 @@ describe("toRel", () => {
 
   it("trims a trailing slash on the root", () => {
     expect(toRel("/Users/x/", "/Users/x/docs")).toBe("docs");
+  });
+});
+
+describe("normalizeDir", () => {
+  it("keeps a plain absolute path", () => {
+    expect(normalizeDir("/Users/x/project")).toBe("/Users/x/project");
+  });
+
+  it("trims whitespace and the trailing slash", () => {
+    expect(normalizeDir("  /Users/x/project/  ")).toBe("/Users/x/project");
+  });
+
+  it("decodes percent-encoded paths coming from OSC 7", () => {
+    expect(normalizeDir("/Users/x/My%20Docs")).toBe("/Users/x/My Docs");
+  });
+
+  it("keeps the raw value when decoding fails", () => {
+    expect(normalizeDir("/Users/x/100%")).toBe("/Users/x/100%");
+  });
+
+  it("keeps the filesystem root intact", () => {
+    expect(normalizeDir("/")).toBe("/");
+  });
+
+  it("rejects relative, empty and NUL-containing input", () => {
+    expect(normalizeDir("relative/path")).toBeNull();
+    expect(normalizeDir("")).toBeNull();
+    expect(normalizeDir("   ")).toBeNull();
+    expect(normalizeDir("/Users/x\0y")).toBeNull();
+  });
+});
+
+describe("ancestorsOf", () => {
+  it("walks from the directory itself up to the root", () => {
+    expect(ancestorsOf("/a/b/c")).toEqual(["/a/b/c", "/a/b", "/a", "/"]);
+  });
+
+  it("handles the root itself", () => {
+    expect(ancestorsOf("/")).toEqual(["/"]);
+  });
+
+  it("ignores a trailing slash", () => {
+    expect(ancestorsOf("/a/b/")).toEqual(["/a/b", "/a", "/"]);
+  });
+
+  it("returns nothing for input that is not an absolute path", () => {
+    expect(ancestorsOf("relative")).toEqual([]);
+  });
+});
+
+describe("firstListable", () => {
+  it("returns the directory itself when it can be listed", async () => {
+    const probe = vi.fn().mockResolvedValue({ entries: [] });
+    await expect(firstListable("/a/b/c", probe)).resolves.toBe("/a/b/c");
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the nearest readable ancestor", async () => {
+    const probe = vi.fn(async (candidate: string) =>
+      candidate === "/a" ? { entries: [] } : { error: "ENOENT" },
+    );
+    await expect(firstListable("/a/b/c", probe)).resolves.toBe("/a");
+  });
+
+  it("returns null when even the root cannot be listed", async () => {
+    const probe = vi.fn().mockResolvedValue({ error: "EACCES" });
+    await expect(firstListable("/a/b", probe)).resolves.toBeNull();
+  });
+
+  it("returns null for input that is not an absolute path", async () => {
+    const probe = vi.fn().mockResolvedValue({ entries: [] });
+    await expect(firstListable("nope", probe)).resolves.toBeNull();
+    expect(probe).not.toHaveBeenCalled();
+  });
+});
+
+describe("localCwdStore", () => {
+  it("reports the latest directory to new subscribers", () => {
+    reportLocalCwd("/Users/x/project");
+    const seen: string[] = [];
+    const unsubscribe = subscribeLocalCwd((dir) => seen.push(dir));
+    expect(seen).toEqual(["/Users/x/project"]);
+    expect(getLocalCwd()).toBe("/Users/x/project");
+    unsubscribe();
+  });
+
+  it("notifies live subscribers on every change", () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribeLocalCwd((dir) => seen.push(dir));
+    seen.length = 0;
+    reportLocalCwd("/a");
+    reportLocalCwd("/a/b");
+    expect(seen).toEqual(["/a", "/a/b"]);
+    unsubscribe();
+  });
+
+  it("stops notifying after unsubscribe", () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribeLocalCwd((dir) => seen.push(dir));
+    unsubscribe();
+    seen.length = 0;
+    reportLocalCwd("/after");
+    expect(seen).toEqual([]);
+    expect(getLocalCwd()).toBe("/after");
+  });
+
+  it("ignores empty reports", () => {
+    reportLocalCwd("/keep");
+    reportLocalCwd("");
+    expect(getLocalCwd()).toBe("/keep");
   });
 });

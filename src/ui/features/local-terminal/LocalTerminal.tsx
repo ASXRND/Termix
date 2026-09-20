@@ -5,6 +5,7 @@ import { useTheme } from "@/components/theme-provider";
 import { resolveTermixThemeColors } from "@/features/terminal/terminal-theme";
 import { DEFAULT_TERMINAL_CONFIG, TERMINAL_FONTS } from "@/lib/terminal-themes";
 import { ensureTerminalFontsLoaded } from "@/features/terminal/terminal-global-styles";
+import { reportLocalCwd } from "@/features/local-explorer/localCwdStore";
 
 export function LocalTerminal({
   instanceId,
@@ -62,6 +63,7 @@ export function LocalTerminal({
     let disposed = false;
     let removeData = () => {};
     let removeExit = () => {};
+    let removeCwd = () => {};
     const input = terminal.onData((data) => {
       const sessionId = sessionIdRef.current;
       if (sessionId) window.electronAPI.writeLocalTerminal(sessionId, data);
@@ -87,6 +89,12 @@ export function LocalTerminal({
             );
           },
         );
+        // The shell reports every `cd` through OSC 7; the file explorer
+        // subscribes to this store and follows along.
+        removeCwd = window.electronAPI.onLocalTerminalCwd(
+          sessionId,
+          reportLocalCwd,
+        );
         return window.electronAPI.readyLocalTerminal(sessionId);
       })
       .catch((error: unknown) => {
@@ -102,6 +110,7 @@ export function LocalTerminal({
       input.dispose();
       removeData();
       removeExit();
+      removeCwd();
       const sessionId = sessionIdRef.current;
       sessionIdRef.current = null;
       if (sessionId) window.electronAPI.closeLocalTerminal(sessionId);

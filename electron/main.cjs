@@ -2915,26 +2915,51 @@ ipcMain.handle("clipboard-read-text", () => clipboard.readText());
 
 require("./local-fs.cjs").registerLocalFsIpc(ipcMain);
 
+const { createOsc7Detector } = require("./cwd-osc7.cjs");
+const { buildShellIntegration } = require("./shell-integration.cjs");
+
 ipcMain.handle("local-terminal-start", (event, dimensions = {}) => {
   const cols = Math.min(500, Math.max(2, Number(dimensions.cols) || 80));
   const rows = Math.min(300, Math.max(1, Number(dimensions.rows) || 24));
   const sessionId = crypto.randomUUID();
   const shellConfig = resolveLocalShell(process.platform, dimensions.shell);
-  const child = pty.spawn(shellConfig.file, shellConfig.args, {
-    name: "xterm-256color",
-    cols,
-    rows,
-    cwd: os.homedir(),
-    env: {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
+  // Shell integration makes the shell report its cwd with OSC 7 so the file
+  // explorer can follow `cd`. Best effort: null means the terminal still
+  // starts, it just will not report directories.
+  const integration = buildShellIntegration(shellConfig.file);
+  const child = pty.spawn(
+    shellConfig.file,
+    integration?.args ?? shellConfig.args,
+    {
+      name: "xterm-256color",
+      cols,
+      rows,
+      cwd: os.homedir(),
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        ...(integration?.env ?? {}),
+      },
     },
-  });
+  );
   const ownerId = event.sender.id;
-  const session = { ownerId, process: child, ready: false, buffered: "" };
+  const session = {
+    ownerId,
+    process: child,
+    ready: false,
+    buffered: "",
+    osc7: createOsc7Detector(),
+  };
   localTerminalSessions.set(sessionId, session);
   child.onData((data) => {
+    // Fed even before "ready": the first prompt arrives with the very first
+    // bytes, and the explorer should know the start directory right away.
+    for (const dir of session.osc7.push(data)) {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`local-terminal:cwd:${sessionId}`, dir);
+      }
+    }
     if (!session.ready) {
       session.buffered = (session.buffered + data).slice(-1024 * 1024);
       return;

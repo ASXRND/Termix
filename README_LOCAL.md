@@ -533,12 +533,45 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 | i18n             | `en.json` / `translated/ru_RU.json`: `nav.localExplorer`, блок `localExplorer`                        | en/ru синхронизированы (край файла)                                                                     |
 | тесты            | `src/ui/tests/features/local-explorer.test.ts`, обновлён `rail-items.test.ts`                         | дерево (toRel/parentOfHome/sort), ключи локалей, списки рейла                                           |
 
-Корень дерева — `dirname($HOME)` (домашняя папка видна как узел, выше неё
-тоже можно подняться). Скрыты: `.DS_Store`, `Library`, `proc`, `sys`, `dev`,
+Корень дерева — `$HOME` (переопределено 19.09.2026 по замечанию: раньше
+открывался `dirname($HOME)`, из-за чего казалось, что панель стартует «в корне
+устройства»). Если локальный терминал уже сообщил свой каталог, панель
+открывается сразу в нём. Скрыты: `.DS_Store`, `Library`, `proc`, `sys`, `dev`,
 `run`, `Volumes`, `mnt`, `boot`, `cdrom`, `lost+found`; лимит 500 записей на
 папку, папки раньше файлов.
 
-Проверено на этой машине: `node --check` × 3, `vitest run` — 2616 passed,
-`eslint` на всех затронутых файлах — 0, `tsc -b --force` — 0, `vite build` — 0.
+### 14.1 Следование за терминалом (OSC 7) и ручной путь
 
-Откат фичи целиком: `git checkout main -- electron/ src/ui/sidebar/ src/ui/AppShell.tsx src/types/ src/ui/locales/ && rm -rf src/ui/features/local-explorer src/ui/tests/features/local-explorer.test.ts` (коммит не делала — правки пока только в working tree).
+| Слой                | Файл/точка                                          | Что делает                                                                                          |
+| ------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| инъекция шелла      | `electron/shell-integration.cjs` (новый)            | zsh → `ZDOTDIR` с `.zshenv/.zprofile/.zlogin/.zshrc`, bash → `--rcfile`; в конец добавляется хук cwd |
+| детектор            | `electron/cwd-osc7.cjs` (новый)                     | потоковый парсер `ESC ] 7 ; file://HOST/PATH` (BEL или ST), переживает любую нарезку чанков         |
+| проводка            | `main.cjs` (`local-terminal-start`)                 | каждый чанк идёт в детектор → `local-terminal:cwd:<sessionId>` в рендерер                            |
+| preload/типы        | `preload.js` → `onLocalTerminalCwd`, `electron.d.ts` | подписка на cwd, отписка возвращается                                                                |
+| публикация          | `LocalTerminal.tsx`                                 | `reportLocalCwd(dir)` при каждом `cd`                                                                |
+| стор                | `local-explorer/localCwdStore.ts` (новый)           | pub/sub без проп-дриллинга: терминал публикует, проводник подписан                                  |
+| проводник           | `LocalFileExplorer.tsx`                             | кнопка-«звено» (вкл/выкл слежение), путь-инпут + Enter, откат к ближайшему читаемому родителю         |
+
+Механика: шелл сам печатает `OSC 7` в приглашении (`precmd` в zsh,
+`PROMPT_COMMAND` в bash) — это тот же протокол, что используют VS Code и
+iTerm2. Хук **дописывается** к rc-файлам пользователя через отдельный rc
+(свои dotfiles не трогаем): zsh читает наши файлы из `ZDOTDIR`, каждый из них
+сначала сорсит `$HOME/...`, bash получает `--rcfile`, который сорсит
+`.bash_profile` → `.profile` → `.bashrc`. Windows PowerShell и прочие шеллы
+(`fish`) не инструментируются — фича просто не активна, терминал работает как
+раньше.
+
+Поведение:
+- слежение включено по умолчанию; `cd` в терминале → дерево переезжает;
+- если каталог удалён/недоступен — откат к ближайшему листаемому родителю
+  (`ancestorsOf` + `firstListable`), панель не остаётся пустой;
+- ручной ввод пути или кнопка «домой» **выключают** слежение (терминал больше
+  не дёргает дерево), вернуть — кликом по «звену»;
+- не-абсолютный путь → красная подсказка `invalidPath`.
+
+Проверено на этой машине: `node --check` × 5, `vitest run` — 2659 passed /
+1 skipped (345 файлов), `eslint` — 0 проблем, `tsc -b --force` — 0 ошибок,
+живой e2e `node-pty` + zsh − `cd /tmp` → детектор увидел
+`["/Users/aleksandrhohon", "/Users/aleksandrhohon", "/tmp"]`.
+
+Откат фичи целиком: `git checkout main -- electron/ src/ui/sidebar/ src/ui/AppShell.tsx src/types/ src/ui/locales/ && rm -rf src/ui/features/local-explorer src/ui/tests/features/local-explorer.test.ts src/ui/tests/electron/cwd-osc7.test.ts src/ui/tests/electron/shell-integration.test.ts` (коммит: `90ee5d8`, коммит со следованием — см. раздел 12).
