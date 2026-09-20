@@ -81,12 +81,6 @@ export function collapseTree(
   return next;
 }
 
-/** Every ancestor rel of a path, from the root downwards (excl. root). */
-export function relAncestors(rel: string): string[] {
-  const parts = rel.split("/").filter(Boolean);
-  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
-}
-
 const relDepth = (rel: string) =>
   rel === ROOT_REL ? 0 : rel.split("/").length;
 

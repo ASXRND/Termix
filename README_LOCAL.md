@@ -22,7 +22,7 @@
 
 ---
 
-## 0. Статус на 19.09.2026
+## 0. Статус на 20.09.2026
 
 | Что                              | Состояние                                                                    |
 | -------------------------------- | ---------------------------------------------------------------------------- |
@@ -33,7 +33,8 @@
 | Homebrew-версия                  | удалена, `brew list --cask` её не показывает                                 |
 | Форк и ветка                     | https://github.com/ASXRND/Termix → `local/macos-pty-fixes` запушена          |
 | Бэкап ветки                      | `~/Desktop/termix-local-fixes.bundle` (12 МБ, `git bundle verify` → ok)      |
-| Коммиты                          | `554f7d1` (фиксы), `8186ce6` и последующие `docs:` — раздел 12               |
+| Локальный проводник (Files)      | в правом доке (виден при разбивке окна), следит за `cd` терминала — раздел 14 |
+| Коммиты                          | `554f7d1` (фиксы), `8186ce6` (docs), `90ee5d8` (проводник), `92bf0fb` (следование за терминалом) — раздел 12 |
 
 ---
 
@@ -461,6 +462,8 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 | --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `554f7d1` | `fix(macos): make the local terminal work (posix_spawnp failed)` | 6 файлов, +947 строк: `scripts/patch-node-pty.cjs` (новый), `scripts/build-mac-local.cjs` (новый), `packaging/build/after-pack.cjs`, `scripts/patch-nan.cjs`, `package.json`, `README_LOCAL.md` (новый) |
 | `8186ce6` | `docs: указать форк origin и команды push/восстановления`        | актуализация раздела 11                                                                                                                                                                                 |
+| `90ee5d8` | `feat(local-explorer): VS Code-style local file explorer in the right dock` | проводник в правом доке: `electron/local-fs.cjs` (новый), `src/ui/features/local-explorer/*` (новые), иконка рейла + автопоказ, i18n en/ru, тесты дерева |
+| `92bf0fb` | `feat(local-explorer): follow the terminal cwd (OSC 7) and allow a manual path` | `electron/cwd-osc7.cjs` и `electron/shell-integration.cjs` (новые), `localCwdStore.ts`, следование за `cd`, путь-инпут, корень `$HOME`, +29 тестов |
 | далее     | коммиты `docs:` — обновления этого файла                         | разделы 0, 12, 13 и правки по ходу работы                                                                                                                                                               |
 | `9c04860` | `chore: sync Crowdin translations`                               | база: клон upstream, наши коммиты идут поверх него                                                                                                                                                      |
 
@@ -509,7 +512,7 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 
 ---
 
-## 14. Локальный проводник (Files, 19.09.2026)
+## 14. Локальный проводник (Files, 19–20.09.2026)
 
 Фича «проводник как в VS Code» для **локальной** машины: файловое дерево
 домашней папки с предпросмотром файлов, живёт в **правом доке**. Док
@@ -533,7 +536,7 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 | i18n             | `en.json` / `translated/ru_RU.json`: `nav.localExplorer`, блок `localExplorer`                        | en/ru синхронизированы (край файла)                                                                     |
 | тесты            | `src/ui/tests/features/local-explorer.test.ts`, обновлён `rail-items.test.ts`                         | дерево (toRel/parentOfHome/sort), ключи локалей, списки рейла                                           |
 
-Корень дерева — `$HOME` (переопределено 19.09.2026 по замечанию: раньше
+Корень дерева — `$HOME` (переопределено 20.09.2026 по замечанию: раньше
 открывался `dirname($HOME)`, из-за чего казалось, что панель стартует «в корне
 устройства»). Если локальный терминал уже сообщил свой каталог, панель
 открывается сразу в нём. Скрыты: `.DS_Store`, `Library`, `proc`, `sys`, `dev`,
