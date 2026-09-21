@@ -52,7 +52,7 @@ import {
   completionMatches,
   joinAbsolute,
   splitCompletionInput,
-} from "./localPathComplete";
+} from "@/lib/path-complete";
 import type { LocalFileTarget } from "@/types/ui-types";
 import { fileTarget } from "./localFileTabs";
 

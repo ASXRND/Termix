@@ -1,7 +1,8 @@
-// Tab completion for the path bar, shell-style but React-free so it can be
-// unit tested: split the typed value into "directory to list" + "last segment",
-// then extend that segment to the longest common prefix of the matches and add
-// a trailing "/" when the single match is a directory.
+// Tab completion for path bars, shell-style but React-free so it can be unit
+// tested: split the typed value into "directory to list" + "last segment", then
+// extend that segment to the longest common prefix of the matches and add a
+// trailing "/" when the single match is a directory. Shared by the local file
+// explorer's folder path bar and the SSH file manager's remote path bar.
 export type CompletionEntry = { name: string; isDir: boolean };
 
 export type CompletionSplit = {

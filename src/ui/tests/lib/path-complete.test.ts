@@ -5,7 +5,7 @@ import {
   joinAbsolute,
   longestCommonPrefix,
   splitCompletionInput,
-} from "@/features/local-explorer/localPathComplete";
+} from "@/lib/path-complete";
 
 const ENTRIES = [
   { name: "Documents", isDir: true },
