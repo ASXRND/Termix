@@ -2015,6 +2015,7 @@
   },
   "fileManager": {
     "noHostSelected": "No host selected",
+    "resizeSidebar": "Drag to resize the folders panel",
     "initializingEditor": "Initializing editor...",
     "file": "File",
     "folder": "Folder",
@@ -4686,6 +4687,7 @@
     "followOff": "Folder pinned — click to follow the terminal again",
     "pathLabel": "Folder path",
     "pathPlaceholder": "/path/to/folder",
+    "pathSuggestions": "Matching folders and files",
     "go": "Open folder",
     "invalidPath": "Enter an absolute path, e.g. /Users/name/project",
     "retry": "Retry",

@@ -16,6 +16,16 @@ export function joinRel(rel: string, name: string): string {
   return rel === ROOT_REL ? name : `${rel}/${name}`;
 }
 
+/** Depth-first search of the tree for a node by its rel path. */
+export function findNode(node: LocalFsNode, rel: string): LocalFsNode | null {
+  if (node.rel === rel) return node;
+  for (const child of node.children ?? []) {
+    const hit = findNode(child, rel);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export function buildChildren(
   parentAbs: string,
   parentRel: string,

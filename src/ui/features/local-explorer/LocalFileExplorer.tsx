@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CornerDownLeft,
+  File as FileIcon,
+  Folder,
   Home,
   Link2,
   Link2Off,
@@ -45,8 +47,20 @@ import {
 } from "./LocalFileContextMenu";
 import { LocalFileNameDialog } from "./LocalFileNameDialog";
 import { LocalFileTree } from "./LocalFileTree";
+import {
+  completePathInput,
+  completionMatches,
+  joinAbsolute,
+  splitCompletionInput,
+} from "./localPathComplete";
 import type { LocalFileTarget } from "@/types/ui-types";
 import { fileTarget } from "./localFileTabs";
+
+/** One Tab-completion candidate shown under the path bar. */
+type PathSuggestion = { name: string; isDir: boolean; path: string };
+
+/** Cap on rendered candidates: the list is a picker, not a directory dump. */
+const MAX_PATH_SUGGESTIONS = 8;
 
 /**
  * VS Code style local file explorer for the right dock. Lives outside the
@@ -76,6 +90,9 @@ export function LocalFileExplorer({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedRel, setSelectedRel] = useState<string | null>(null);
+  /** Tab-completion candidates for the path bar, plus the highlighted one. */
+  const [suggestions, setSuggestions] = useState<PathSuggestion[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<{
     node: LocalFsNode | null;
     x: number;
@@ -439,6 +456,49 @@ export function LocalFileExplorer({
     setRoot(normalized);
   }, [pathInput]);
 
+  // Tab completion in the path bar, shell-style: list the directory being
+  // typed, extend the last segment to the common prefix of the matches and,
+  // when several candidates remain, offer the classic list to pick from.
+  const completePath = useCallback(async () => {
+    const { listDir } = splitCompletionInput(pathInput);
+    const res = await localFsList(listDir, "");
+    if (res.error) return;
+    const matches = completionMatches(pathInput, res.entries);
+    if (matches.length === 0) {
+      setSuggestions([]);
+      return;
+    }
+    const completed = completePathInput(pathInput, res.entries);
+    if (completed) {
+      setPathInput(completed);
+      setPathError(null);
+    }
+    // One match is already complete; more than one needs a list to choose from.
+    setSuggestions(
+      matches.length > 1
+        ? matches.slice(0, MAX_PATH_SUGGESTIONS).map((match) => ({
+            name: match.name,
+            isDir: match.isDir,
+            // Directories navigate, files open — keep the folder slash off the
+            // value we hand to the navigation helper.
+            path: joinAbsolute(listDir, match.name),
+          }))
+        : [],
+    );
+    setSuggestionIndex(0);
+  }, [pathInput]);
+
+  /** Navigates to a suggestion picked from the completion list. */
+  const pickSuggestion = useCallback((suggestion: PathSuggestion) => {
+    setSuggestions([]);
+    setPathInput(suggestion.path);
+    if (!suggestion.isDir) return;
+    // The path came straight from a directory listing, so it is valid.
+    setFollow(false);
+    setPathError(null);
+    setRoot(suggestion.path);
+  }, []);
+
   const showSkeleton =
     booting || Boolean(root && !tree && !loadError && loading);
 
@@ -520,6 +580,42 @@ export function LocalFileExplorer({
               onChange={(event) => {
                 setPathInput(event.target.value);
                 setPathError(null);
+                setSuggestions([]);
+              }}
+              onKeyDown={(event) => {
+                // Tab completes the typed path like a shell prompt.
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  void completePath();
+                  return;
+                }
+                if (suggestions.length === 0) {
+                  if (event.key === "Escape") setSuggestions([]);
+                  return;
+                }
+                // Arrow keys walk the candidate list, Enter takes the pick,
+                // Escape closes it (Enter would otherwise navigate).
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSuggestionIndex((i) => (i + 1) % suggestions.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSuggestionIndex(
+                    (i) => (i - 1 + suggestions.length) % suggestions.length,
+                  );
+                  return;
+                }
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  pickSuggestion(suggestions[suggestionIndex]);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSuggestions([]);
+                }
               }}
             />
             <Button
@@ -532,6 +628,44 @@ export function LocalFileExplorer({
               <CornerDownLeft className="h-3.5 w-3.5" />
             </Button>
           </form>
+          {suggestions.length > 0 && (
+            <ul
+              className="mt-1 max-h-44 overflow-y-auto rounded border border-sidebar-border bg-popover py-0.5 shadow-sm"
+              role="listbox"
+              aria-label={t("localExplorer.pathSuggestions")}
+            >
+              {suggestions.map((suggestion, index) => (
+                <li key={suggestion.path}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === suggestionIndex}
+                    className={`flex w-full items-center gap-1.5 px-1.5 py-0.5 text-left text-[11px] ${
+                      index === suggestionIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50"
+                    }`}
+                    title={suggestion.path}
+                    onMouseEnter={() => setSuggestionIndex(index)}
+                    onClick={() => pickSuggestion(suggestion)}
+                  >
+                    {suggestion.isDir ? (
+                      <Folder className="h-3 w-3 shrink-0 text-accent-brand" />
+                    ) : (
+                      <FileIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    )}
+                    <span
+                      className={`truncate ${
+                        suggestion.isDir ? "" : "text-muted-foreground"
+                      }`}
+                    >
+                      {suggestion.name}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {pathError && (
             <p className="mt-1 text-[11px] text-destructive">
               {t(`localExplorer.${pathError}`)}

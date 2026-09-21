@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bell,
@@ -18,6 +18,7 @@ import { readRailPreference, setRailPreference } from "./rail-preferences";
 import { visibleRailItems } from "./rail-items";
 import {
   applyRailOrder,
+  railRows,
   readRailOrder,
   reorderRailIds,
   resetRailOrder,
@@ -49,23 +50,29 @@ export type HideableRailView =
   | "network_graph"
   | "homepage";
 
-type RailItem =
-  | {
-      kind?: undefined;
-      view: RailView;
-      icon: React.ReactNode;
-      title: string;
-      dot?: boolean;
-      promotable?: boolean;
-      rightDockable?: boolean;
-    }
-  | { kind: "tab"; tabType: TabType; icon: React.ReactNode; title: string }
-  | { kind: "separator" };
+type RailItem = {
+  kind?: undefined;
+  view: RailView;
+  icon: React.ReactNode;
+  title: string;
+  dot?: boolean;
+  promotable?: boolean;
+  rightDockable?: boolean;
+  /** Draws a divider between this button and the next one. */
+  separatorAfter?: boolean;
+};
+
+type TabRailItem = {
+  kind: "tab";
+  tabType: TabType;
+  icon: React.ReactNode;
+  title: string;
+  separatorAfter?: boolean;
+};
 
 /** Stable DOM/data id of a rail item used for drag-reorder bookkeeping. */
-function idOf(item: RailItem): string {
+function idOf(item: RailItem | TabRailItem): string {
   if (item.kind === "tab") return `tab:${item.tabType}`;
-  if (item.kind === "separator") return `sep`;
   return item.view;
 }
 
@@ -73,8 +80,8 @@ function buildRailButtons(
   splitMode: SplitMode,
   t: (key: string) => string,
   hidden: Set<string>,
-): RailItem[] {
-  const all: RailItem[] = [];
+): (RailItem | TabRailItem)[] {
+  const all: (RailItem | TabRailItem)[] = [];
   for (const item of visibleRailItems()) {
     const Icon = item.icon;
     if (item.kind === "tab") {
@@ -83,6 +90,7 @@ function buildRailButtons(
         tabType: item.id as TabType,
         icon: <Icon size={16} />,
         title: t(item.labelKey),
+        separatorAfter: item.separatorAfter,
       });
     } else {
       all.push({
@@ -92,30 +100,15 @@ function buildRailButtons(
         dot: item.id === "split-screen" ? splitMode !== "none" : undefined,
         promotable: item.promotable,
         rightDockable: item.rightDockable,
+        separatorAfter: item.separatorAfter,
       });
     }
-    if (item.separatorAfter) all.push({ kind: "separator" });
   }
 
-  // Filter out hidden items, then collapse consecutive/leading/trailing separators
-  const filtered = all.filter((item) => {
-    if (item.kind === "separator") return true;
-    if ("tabType" in item) return !hidden.has(item.tabType);
-    return !hidden.has(item.view);
-  });
-
-  const result: RailItem[] = [];
-  for (const item of filtered) {
-    if (item.kind === "separator") {
-      if (result.length === 0 || result[result.length - 1].kind === "separator")
-        continue;
-      result.push(item);
-    } else {
-      result.push(item);
-    }
-  }
-  if (result[result.length - 1]?.kind === "separator") result.pop();
-  return result;
+  // Hidden destinations never reach the rail.
+  return all.filter((item) =>
+    item.kind === "tab" ? !hidden.has(item.tabType) : !hidden.has(item.view),
+  );
 }
 
 const btnBase =
@@ -315,14 +308,11 @@ export function AppRail({
     ...(aiEnabled ? [] : ["ai"]),
   ]);
   const railButtons = buildRailButtons(splitMode, t, effectiveHiddenTabs);
-  // Apply the saved order to the visible buttons; separators keep relative
-  // positions because sort is stable and they carry no id (kind === "separator"
-  // has none), so they drift with the block they sit between.
-  const orderedRailButtons = applyRailOrder(
-    railButtons,
-    railOrder,
-    idOf,
-  ) as typeof railButtons;
+  // Buttons are keyed by their stable id, so a saved order only ever carries
+  // real destinations (dividers ride along on the button they follow).
+  const orderedRailButtons = applyRailOrder(railButtons, railOrder, idOf);
+  // Rows = ordered buttons + the divider that follows each of them.
+  const railButtonRows = railRows(orderedRailButtons);
 
   /** Persists the new order after a drop on a button row. */
   const commitReorder = (dragId: string, targetId: string, before: boolean) => {
@@ -442,27 +432,91 @@ export function AppRail({
       }}
     >
       <div className="flex flex-col flex-1 gap-1 overflow-y-auto scrollbar-none min-h-0">
-        {orderedRailButtons.map((item, i) => {
-          if (item.kind === "separator")
-            return (
-              <div
-                key={`sep-${i}`}
-                className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
-                style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
-              />
-            );
+        {railButtonRows.map(({ item, separator }) => {
+          // Divider drawn right after its own button, so it always travels with
+          // it when the order changes.
+          const divider = separator ? (
+            <div
+              key={`sep-${idOf(item)}`}
+              className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
+              style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
+            />
+          ) : null;
           if ("tabType" in item) {
             const id = idOf(item);
             const dropActive = dragOverId?.startsWith(`${id}:`);
             return (
+              <Fragment key={item.tabType}>
+                <button
+                  data-rail-id={id}
+                  onClick={() => onOpenTab?.(item.tabType)}
+                  style={btnStyle}
+                  className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60 ${
+                    draggingId === id ? "opacity-40" : ""
+                  } ${dropActive ? "ring-1 ring-accent-brand" : ""}`}
+                  {...pressProps(id)}
+                >
+                  <span
+                    className="shrink-0 flex items-center justify-center"
+                    style={{ width: 16, height: 16 }}
+                  >
+                    {item.icon}
+                  </span>
+                  <span
+                    className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
+                      railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
+                    }`}
+                  >
+                    {item.title}
+                  </span>
+                </button>
+                {divider}
+              </Fragment>
+            );
+          }
+          const id = idOf(item);
+          const dropActive = dragOverId?.startsWith(`${id}:`);
+          return (
+            <Fragment key={item.view}>
               <button
-                key={item.tabType}
                 data-rail-id={id}
-                onClick={() => onOpenTab?.(item.tabType)}
+                onClick={(e) => {
+                  if (item.promotable && (e.ctrlKey || e.metaKey)) {
+                    onOpenTab?.(item.view as TabType);
+                    return;
+                  }
+                  onRailClick(item.view);
+                }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1 || !item.promotable) return;
+                  e.preventDefault();
+                  onOpenTab?.(item.view as TabType);
+                }}
+                onContextMenu={() => {
+                  if (item.promotable || item.rightDockable)
+                    setMenuTarget({
+                      view: item.view,
+                      title: item.title,
+                      promotable: item.promotable,
+                      rightDockable: item.rightDockable,
+                    });
+                }}
+                data-rail-promotable={
+                  item.promotable || item.rightDockable ? "" : undefined
+                }
+                title={
+                  item.promotable
+                    ? `${item.title}\n${t("nav.openAsTabHint")}`
+                    : item.title
+                }
                 style={btnStyle}
-                className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60 ${
-                  draggingId === id ? "opacity-40" : ""
-                } ${dropActive ? "ring-1 ring-accent-brand" : ""}`}
+                className={`${btnBase} ${
+                  sidebarOpen && railView === item.view
+                    ? "text-accent-brand bg-accent-brand/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                } ${draggingId === id ? "opacity-40" : ""} ${
+                  dropActive ? "ring-1 ring-accent-brand" : ""
+                }`}
                 {...pressProps(id)}
               >
                 <span
@@ -478,71 +532,12 @@ export function AppRail({
                 >
                   {item.title}
                 </span>
+                {item.dot && (
+                  <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-accent-brand" />
+                )}
               </button>
-            );
-          }
-          const id = idOf(item);
-          const dropActive = dragOverId?.startsWith(`${id}:`);
-          return (
-            <button
-              key={item.view}
-              data-rail-id={id}
-              onClick={(e) => {
-                if (item.promotable && (e.ctrlKey || e.metaKey)) {
-                  onOpenTab?.(item.view as TabType);
-                  return;
-                }
-                onRailClick(item.view);
-              }}
-              onAuxClick={(e) => {
-                if (e.button !== 1 || !item.promotable) return;
-                e.preventDefault();
-                onOpenTab?.(item.view as TabType);
-              }}
-              onContextMenu={() => {
-                if (item.promotable || item.rightDockable)
-                  setMenuTarget({
-                    view: item.view,
-                    title: item.title,
-                    promotable: item.promotable,
-                    rightDockable: item.rightDockable,
-                  });
-              }}
-              data-rail-promotable={
-                item.promotable || item.rightDockable ? "" : undefined
-              }
-              title={
-                item.promotable
-                  ? `${item.title}\n${t("nav.openAsTabHint")}`
-                  : item.title
-              }
-              style={btnStyle}
-              className={`${btnBase} ${
-                sidebarOpen && railView === item.view
-                  ? "text-accent-brand bg-accent-brand/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-              } ${draggingId === id ? "opacity-40" : ""} ${
-                dropActive ? "ring-1 ring-accent-brand" : ""
-              }`}
-              {...pressProps(id)}
-            >
-              <span
-                className="shrink-0 flex items-center justify-center"
-                style={{ width: 16, height: 16 }}
-              >
-                {item.icon}
-              </span>
-              <span
-                className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
-                  railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
-                }`}
-              >
-                {item.title}
-              </span>
-              {item.dot && (
-                <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-accent-brand" />
-              )}
-            </button>
+              {divider}
+            </Fragment>
           );
         })}
       </div>

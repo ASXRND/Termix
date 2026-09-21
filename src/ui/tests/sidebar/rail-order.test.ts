@@ -34,19 +34,21 @@ describe("applyRailOrder", () => {
   });
 
   it("keeps duplicate-keyed items together and in list order", () => {
+    // Generic guard for the comparator: two entries sharing a key stay as one
+    // group in list order (this is what used to happen to rail dividers).
     const duplicated = [
       { id: "a" },
-      { id: "sep" },
+      { id: "dup" },
       { id: "b" },
-      { id: "sep" },
+      { id: "dup" },
       { id: "c" },
     ];
     expect(applyRailOrder(duplicated, ["c", "a"], (item) => item.id)).toEqual([
       { id: "c" },
       { id: "a" },
-      { id: "sep" },
+      { id: "dup" },
       { id: "b" },
-      { id: "sep" },
+      { id: "dup" },
     ]);
   });
 
@@ -106,5 +108,13 @@ describe("storage round-trip", () => {
     writeRailOrder(["c", "a"]);
     resetRailOrder();
     expect(readRailOrder()).toEqual([]);
+  });
+
+  it("drops legacy divider keys and empty entries", () => {
+    localStorage.setItem(
+      "railItemOrder",
+      JSON.stringify(["connections", "sep", "", "hosts", "sep"]),
+    );
+    expect(readRailOrder()).toEqual(["connections", "hosts"]);
   });
 });

@@ -109,6 +109,19 @@ import {
 
 const LARGE_FILE_WARNING_SIZE = 50 * 1024 * 1024;
 
+/** Sidebar (folder tree) width limits for the drag handle, in px. */
+const SIDEBAR_MIN_WIDTH = 160;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 224;
+const SIDEBAR_WIDTH_KEY = "fileManagerSidebarWidth";
+
+/** Reads the persisted sidebar width, ignoring anything out of range. */
+function readStoredSidebarWidth(): number {
+  const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  if (!Number.isFinite(stored)) return SIDEBAR_DEFAULT_WIDTH;
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, stored));
+}
+
 function FileManagerContent({
   initialHost,
   initialFilePath,
@@ -193,6 +206,9 @@ function FileManagerContent({
   const [trashOpen, setTrashOpen] = useState(false);
   const [hasConnectionError, setHasConnectionError] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Draggable sidebar width (px), persisted so long file names stay readable.
+  const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
   const [diskInfo, setDiskInfo] = useState<{
     usedHuman: string;
     totalHuman: string;
@@ -200,6 +216,55 @@ function FileManagerContent({
     mount: string | null;
     filesystems: DiskFilesystem[];
   } | null>(null);
+
+  /**
+   * Drag-to-resize for the folder-tree sidebar. Pointer capture keeps tracking
+   * when the pointer leaves the 12px strip; text selection is suppressed while
+   * dragging and the final width is persisted on release.
+   */
+  const startSidebarResize = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const strip = event.currentTarget;
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.userSelect = "none";
+      setResizingSidebar(true);
+      strip.setPointerCapture(event.pointerId);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        setSidebarWidth(
+          Math.min(
+            SIDEBAR_MAX_WIDTH,
+            Math.max(
+              SIDEBAR_MIN_WIDTH,
+              startWidth + (moveEvent.clientX - startX),
+            ),
+          ),
+        );
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        strip.removeEventListener("pointermove", onMove);
+        strip.removeEventListener("pointerup", onUp);
+        strip.removeEventListener("pointercancel", onUp);
+        if (strip.hasPointerCapture(upEvent.pointerId)) {
+          strip.releasePointerCapture(upEvent.pointerId);
+        }
+        document.body.style.userSelect = previousUserSelect;
+        setResizingSidebar(false);
+        setSidebarWidth((width) => {
+          localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+          return width;
+        });
+      };
+      strip.addEventListener("pointermove", onMove);
+      strip.addEventListener("pointerup", onUp);
+      strip.addEventListener("pointercancel", onUp);
+    },
+    [sidebarWidth],
+  );
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -3252,15 +3317,17 @@ function FileManagerContent({
             />
           )}
 
-          {/* Sidebar — fixed overlay on mobile, static on desktop */}
+          {/* Sidebar — fixed overlay on mobile, static on desktop.
+              Width is user-draggable so long file names stay readable. */}
           <div
             className={cn(
-              "w-56 flex-shrink-0 h-full flex flex-col",
+              "flex-shrink-0 h-full flex flex-col relative",
               "md:flex",
               mobileSidebarOpen
                 ? "fixed left-0 top-0 bottom-0 w-64 z-30 flex"
                 : "hidden md:flex",
             )}
+            style={mobileSidebarOpen ? undefined : { width: sidebarWidth }}
           >
             <div className="flex-1 flex flex-col overflow-hidden min-h-0 border border-border bg-card">
               <FileManagerSidebar
@@ -3275,9 +3342,33 @@ function FileManagerContent({
                 diskInfo={diskInfo ?? undefined}
               />
             </div>
+
+            {/* Grab strip straddling the sidebar's right border: widens it up
+                to 480 px so long file names stay readable. Sits inside the
+                wrapper so it never changes the row layout. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t("fileManager.resizeSidebar")}
+              className={cn(
+                "group absolute inset-y-0 -right-1.5 z-10 hidden w-3 cursor-col-resize md:block",
+                resizingSidebar && "bg-primary/20",
+              )}
+              title={t("fileManager.resizeSidebar")}
+              onPointerDown={startSidebarResize}
+            >
+              <span
+                className={cn(
+                  "mx-auto h-full w-px transition-colors",
+                  resizingSidebar
+                    ? "bg-primary"
+                    : "bg-transparent group-hover:bg-primary/60",
+                )}
+              />
+            </div>
           </div>
 
-          <div className="flex-1 relative overflow-hidden min-h-0 flex flex-col border border-border bg-card">
+          <div className="flex-1 relative overflow-hidden min-h-0 min-w-0 flex flex-col border border-border bg-card">
             <div className="flex-1 relative min-h-0 h-full">
               <FileManagerGrid
                 files={filteredFiles}

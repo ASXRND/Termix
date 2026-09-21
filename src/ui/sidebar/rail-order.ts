@@ -70,13 +70,41 @@ export function reorderRailIds(
   return ids;
 }
 
-/** Reads the persisted order, tolerating corrupted storage. */
+/**
+ * Splits ordered rail buttons into rows, attaching each divider to the button
+ * it follows. Dividers used to be standalone list entries which all shared one
+ * sort key ("sep"), so the first custom order collapsed every divider into a
+ * single block of lines (and the seeded order even stored them). Keeping the
+ * flag on the button makes a divider travel with it and removes the duplicates
+ * entirely. A divider is dropped after the last button; adjacent dividers are
+ * collapsed into one line.
+ */
+export function railRows<T extends { separatorAfter?: boolean }>(
+  items: T[],
+): { item: T; separator: boolean }[] {
+  const rows = items.map((item, i) => ({
+    item,
+    separator: Boolean(item.separatorAfter) && i < items.length - 1,
+  }));
+  for (let i = 1; i < rows.length; i += 1) {
+    if (rows[i].separator && rows[i - 1].separator) rows[i].separator = false;
+  }
+  return rows;
+}
+
+/** Reads the persisted order, tolerating corrupted storage. Legacy `sep` keys
+ * are dropped: an earlier build seeded the order from the rendered list where
+ * every divider was its own entry, and those keys made all dividers collapse
+ * into one block of lines at the top of the rail.
+ */
 export function readRailOrder(): string[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : null;
     return Array.isArray(parsed)
-      ? parsed.filter((id) => typeof id === "string")
+      ? parsed.filter(
+          (id) => typeof id === "string" && id.length > 0 && id !== "sep",
+        )
       : [];
   } catch {
     return [];
