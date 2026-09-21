@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CornerDownLeft,
@@ -29,7 +29,9 @@ import { getLocalCwd, subscribeLocalCwd } from "./localCwdStore";
 import {
   addTreeChild,
   collapseTree,
+  findNode,
   joinRel,
+  ROOT_REL,
   type LocalFsNode,
 } from "./localFsTree";
 import {
@@ -84,6 +86,8 @@ export function LocalFileExplorer({
     | { mode: "newFile" | "newFolder"; dirRel: string }
     | null
   >(null);
+  /** Container of the tree; keyboard copy/paste only fire when focus is here. */
+  const treeRef = useRef<HTMLDivElement>(null);
 
   // Resolve the starting folder once: the home dir (so the tree does not open
   // at the device root), or wherever the local shell already reported being.
@@ -227,6 +231,75 @@ export function LocalFileExplorer({
     [],
   );
 
+  // ---- clipboard operations ----------------------------------------------
+
+  /** Paste target: a directory itself, or the parent of a selected file. */
+  const pasteDestDirRel = useCallback((node: LocalFsNode | null): string => {
+    if (!node) return ROOT_REL;
+    return node.isDir
+      ? node.rel
+      : node.rel.includes("/")
+        ? node.rel.slice(0, node.rel.lastIndexOf("/"))
+        : ROOT_REL;
+  }, []);
+
+  /** Pastes the clipboard (in-app first, then OS file references) into dirRel. */
+  const pasteIntoDir = useCallback(
+    async (dirRel: string) => {
+      if (!root) return;
+      const clip = getCopiedEntry();
+      if (clip) {
+        const res = await localFsCopyInto(clip.root, clip.rel, dirRel);
+        if (res.ok) void refresh();
+        return;
+      }
+      // Fall back to files copied in the OS file manager (Finder puts file
+      // references on the system clipboard).
+      const system = await localFsClipboardFiles();
+      if (!system.paths.length) return;
+      for (const sourceAbs of system.paths) {
+        const res = await localFsCopyExternalInto(root, sourceAbs, dirRel);
+        if (res.error) return;
+      }
+      void refresh();
+    },
+    [root, refresh],
+  );
+
+  // Keyboard copy/paste (⌘C / ⌘V) for the tree selection. Works whenever the
+  // local explorer is mounted and no text field owns the focus — requiring the
+  // exact tree row to be focused made ⌘C silently fail after any click
+  // elsewhere in the panel.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const accel = event.metaKey || event.ctrlKey;
+      if (!accel || event.shiftKey || event.altKey) return;
+      if (event.code !== "KeyC" && event.code !== "KeyV") return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          active.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (event.code === "KeyC") {
+        if (!selectedRel || !tree) return;
+        const node = findNode(tree, selectedRel);
+        if (node && node.rel !== "")
+          setCopiedEntry(entryFromNode(root ?? "", node));
+        return;
+      }
+      // KeyV
+      const node = selectedRel && tree ? findNode(tree, selectedRel) : null;
+      void pasteIntoDir(pasteDestDirRel(node));
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedRel, tree, root, pasteIntoDir, pasteDestDirRel]);
+
   // ---- context-menu operations -------------------------------------------
 
   const handleMenuAction = useCallback(
@@ -255,30 +328,7 @@ export function LocalFileExplorer({
         case "paste": {
           // Paste lands in the folder under the cursor; on a file it lands in
           // that file's parent folder (VS Code behaviour).
-          const destDirRel = node?.isDir
-            ? node.rel
-            : (node?.rel ?? "").includes("/")
-              ? (node?.rel ?? "").slice(0, (node?.rel ?? "").lastIndexOf("/"))
-              : "";
-          // Prefer the in-app clipboard; fall back to files copied in the OS
-          // file manager (Finder puts file references on the clipboard).
-          const clip = getCopiedEntry();
-          if (clip) {
-            const res = await localFsCopyInto(clip.root, clip.rel, destDirRel);
-            if (res.ok) void refresh();
-            return;
-          }
-          const system = await localFsClipboardFiles();
-          if (!system.paths.length) return;
-          for (const sourceAbs of system.paths) {
-            const res = await localFsCopyExternalInto(
-              root,
-              sourceAbs,
-              destDirRel,
-            );
-            if (res.error) return;
-          }
-          void refresh();
+          await pasteIntoDir(pasteDestDirRel(node));
           return;
         }
         case "duplicate":
@@ -318,7 +368,16 @@ export function LocalFileExplorer({
           return;
       }
     },
-    [root, contextMenu, expanded, toggleDir, onOpenFile, refresh],
+    [
+      root,
+      contextMenu,
+      expanded,
+      toggleDir,
+      onOpenFile,
+      refresh,
+      pasteDestDirRel,
+      pasteIntoDir,
+    ],
   );
 
   const submitNameDialog = useCallback(
@@ -481,7 +540,7 @@ export function LocalFileExplorer({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={treeRef} className="min-h-0 flex-1 overflow-y-auto">
         {initError ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">
             {t(`localExplorer.${initError}`)}

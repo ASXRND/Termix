@@ -5,24 +5,42 @@ const STORAGE_KEY = "railItemOrder";
 export const RAIL_ORDER_EVENT = "railItemOrderChanged";
 
 /**
- * Applies a saved order to the full item list: known ids are reordered, items
- * missing from the order list keep their default relative order and are
- * appended at the end (so a new upstream item never breaks the saved order).
+ * Applies a saved order to the full item list. Items are keyed by `keyOf`;
+ * duplicates (rendered separators all key as "sep") keep their relative order
+ * and are placed between the ordered neighbours. Items missing from the order
+ * list keep their default relative order and go to the end.
  */
-export function applyRailOrder<T extends { id: string }>(
+export function applyRailOrder<T>(
   items: T[],
   order: string[],
+  keyOf: (item: T) => string,
 ): T[] {
   if (order.length === 0) return items;
-  const index = new Map(order.map((id, i) => [id, i]));
-  return [...items].sort((a, b) => {
-    const ia = index.get(a.id);
-    const ib = index.get(b.id);
-    if (ia === undefined && ib === undefined) return 0;
-    if (ia === undefined) return 1;
-    if (ib === undefined) return -1;
-    return ia - ib;
+  const rank = new Map<string, number>();
+  for (let i = 0; i < order.length; i += 1) {
+    // First occurrence wins: duplicates in the order list are ignored.
+    if (!rank.has(order[i])) rank.set(order[i], i);
+  }
+  // Group item indices by key so duplicates sort together, in list order.
+  const groups = new Map<string, number[]>();
+  items.forEach((item, i) => {
+    const key = keyOf(item);
+    const list = groups.get(key);
+    if (list) list.push(i);
+    else groups.set(key, [i]);
   });
+  // Stable comparator: primary = saved rank, secondary = default list index.
+  return items
+    .map((item, i) => ({ item, i, key: keyOf(item) }))
+    .sort((a, b) => {
+      const ra = rank.get(a.key);
+      const rb = rank.get(b.key);
+      if (ra === undefined && rb === undefined) return a.i - b.i;
+      if (ra === undefined) return 1;
+      if (rb === undefined) return -1;
+      return ra - rb || a.i - b.i;
+    })
+    .map(({ item }) => item);
 }
 
 /**

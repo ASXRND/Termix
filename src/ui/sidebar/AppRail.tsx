@@ -162,9 +162,11 @@ export function AppRail({
   // User-dragged order of rail buttons; ids missing from the list keep the
   // default order at the end (new upstream items never break the layout).
   const [railOrder, setRailOrder] = useState<string[]>(() => readRailOrder());
-  const dragIdRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  /** Mirror of dragOverId for pointer handlers registered outside React. */
+  const dragOverIdRef = useRef<string | null>(null);
+  dragOverIdRef.current = dragOverId;
 
   useEffect(() => {
     const sync = () => setRailOrder(readRailOrder());
@@ -317,8 +319,9 @@ export function AppRail({
   // positions because sort is stable and they carry no id (kind === "separator"
   // has none), so they drift with the block they sit between.
   const orderedRailButtons = applyRailOrder(
-    railButtons as never,
+    railButtons,
     railOrder,
+    idOf,
   ) as typeof railButtons;
 
   /** Persists the new order after a drop on a button row. */
@@ -335,50 +338,76 @@ export function AppRail({
     }
   };
 
-  /** HTML5 drag source: announces which rail id is being dragged. */
-  const dragProps = (id: string) => ({
-    draggable: true,
-    onDragStart: (e: React.DragEvent) => {
-      dragIdRef.current = id;
-      setDraggingId(id);
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", `rail:${id}`);
-    },
-    onDragEnd: () => {
-      dragIdRef.current = null;
-      setDraggingId(null);
-      setDragOverId(null);
-    },
-  });
-
-  /** Drop target: computes before/after from the pointer position inside the row. */
-  const dropProps = (id: string) => ({
-    onDragOver: (e: React.DragEvent) => {
-      if (!dragIdRef.current || dragIdRef.current === id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      const rect = e.currentTarget.getBoundingClientRect();
-      const after = e.clientY - rect.top > rect.height / 2;
-      setDragOverId(`${id}:${after ? "after" : "before"}`);
-    },
-    onDragLeave: (e: React.DragEvent) => {
-      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-      setDragOverId((cur) => (cur?.startsWith(`${id}:`) ? null : cur));
-    },
-    onDrop: (e: React.DragEvent) => {
-      e.preventDefault();
-      const dragId = dragIdRef.current;
-      const over = dragOverId;
-      setDragOverId(null);
-      dragIdRef.current = null;
-      setDraggingId(null);
-      if (!dragId || dragId === id) return;
-      // Trust the last dragOver marker, fall back to pointer position.
-      const after = over
-        ? over.endsWith(":after")
-        : e.clientY - e.currentTarget.getBoundingClientRect().top >
-          e.currentTarget.getBoundingClientRect().height / 2;
-      commitReorder(dragId, id, !after);
+  /**
+   * Pointer-based drag reorder. HTML5 drag events proved unreliable inside
+   * Electron here (dragover fired, drop never did), so the rail tracks the
+   * pointer manually like TabBar does for tabs: press, move 4px, track the
+   * element under the pointer, reorder on release.
+   */
+  const pressProps = (id: string) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let dragging = false;
+      const onMove = (ev: PointerEvent) => {
+        if (
+          !dragging &&
+          Math.abs(ev.clientX - startX) < 4 &&
+          Math.abs(ev.clientY - startY) < 4
+        ) {
+          return;
+        }
+        if (!dragging) {
+          dragging = true;
+          setDraggingId(id);
+        }
+        ev.preventDefault();
+        const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+        const row = hit?.closest("[data-rail-id]") ?? null;
+        const targetId = row?.getAttribute("data-rail-id") ?? null;
+        if (targetId && targetId !== id) {
+          const rect = row!.getBoundingClientRect();
+          const after = ev.clientY - rect.top > rect.height / 2;
+          setDragOverId(`${targetId}:${after ? "after" : "before"}`);
+        } else {
+          setDragOverId(null);
+        }
+      };
+      const finish = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", cancel);
+        const over = dragOverIdRef.current;
+        const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+        const row = hit?.closest("[data-rail-id]") ?? null;
+        const targetId = row?.getAttribute("data-rail-id") ?? null;
+        let target = targetId;
+        let before: boolean;
+        if (target) {
+          before = !over?.startsWith(`${target}:after`);
+        } else if (over) {
+          // Pointer left the row between move and up: trust the last marker.
+          const idx = over.lastIndexOf(":");
+          target = over.slice(0, idx);
+          before = over.endsWith(":before");
+        }
+        setDraggingId(null);
+        setDragOverId(null);
+        if (dragging && target && target !== id) {
+          commitReorder(id, target, before);
+        }
+      };
+      const cancel = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", cancel);
+        setDraggingId(null);
+        setDragOverId(null);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", cancel);
     },
   });
 
@@ -428,13 +457,13 @@ export function AppRail({
             return (
               <button
                 key={item.tabType}
+                data-rail-id={id}
                 onClick={() => onOpenTab?.(item.tabType)}
                 style={btnStyle}
                 className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60 ${
                   draggingId === id ? "opacity-40" : ""
                 } ${dropActive ? "ring-1 ring-accent-brand" : ""}`}
-                {...dragProps(id)}
-                {...dropProps(id)}
+                {...pressProps(id)}
               >
                 <span
                   className="shrink-0 flex items-center justify-center"
@@ -457,6 +486,7 @@ export function AppRail({
           return (
             <button
               key={item.view}
+              data-rail-id={id}
               onClick={(e) => {
                 if (item.promotable && (e.ctrlKey || e.metaKey)) {
                   onOpenTab?.(item.view as TabType);
@@ -494,8 +524,7 @@ export function AppRail({
               } ${draggingId === id ? "opacity-40" : ""} ${
                 dropActive ? "ring-1 ring-accent-brand" : ""
               }`}
-              {...dragProps(id)}
-              {...dropProps(id)}
+              {...pressProps(id)}
             >
               <span
                 className="shrink-0 flex items-center justify-center"
@@ -702,21 +731,19 @@ export function AppRail({
             </span>
             {t("newUi.sidebar.userProfile.expandAppRailOnHover")}
           </button>
-          {railOrder.length > 0 && (
-            <button
-              onClick={() => {
-                resetRailOrder();
-                setRailOrder([]);
-                setMenuPos(null);
-              }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground"
-            >
-              <span className="shrink-0 w-3 flex items-center justify-center">
-                <RotateCcw className="size-3" />
-              </span>
-              {t("nav.resetRailOrder")}
-            </button>
-          )}
+          <button
+            onClick={() => {
+              resetRailOrder();
+              setRailOrder([]);
+              setMenuPos(null);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground"
+          >
+            <span className="shrink-0 w-3 flex items-center justify-center">
+              <RotateCcw className="size-3" />
+            </span>
+            {t("nav.resetRailOrder")}
+          </button>
           <div className="h-px bg-border my-1" />
           <button
             onClick={() => {

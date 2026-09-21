@@ -8,14 +8,15 @@ import {
 } from "../../sidebar/rail-order";
 
 const ITEMS = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+const keyOf = (item: { id: string }) => item.id;
 
 describe("applyRailOrder", () => {
   it("keeps the default order when the saved order is empty", () => {
-    expect(applyRailOrder(ITEMS, [])).toEqual(ITEMS);
+    expect(applyRailOrder(ITEMS, [], keyOf)).toEqual(ITEMS);
   });
 
   it("reorders known ids and appends unknown-to-order items at the end", () => {
-    expect(applyRailOrder(ITEMS, ["c", "a"])).toEqual([
+    expect(applyRailOrder(ITEMS, ["c", "a"], keyOf)).toEqual([
       { id: "c" },
       { id: "a" },
       { id: "b" },
@@ -24,7 +25,7 @@ describe("applyRailOrder", () => {
   });
 
   it("is stable for an order covering all ids", () => {
-    expect(applyRailOrder(ITEMS, ["d", "c", "b", "a"])).toEqual([
+    expect(applyRailOrder(ITEMS, ["d", "c", "b", "a"], keyOf)).toEqual([
       { id: "d" },
       { id: "c" },
       { id: "b" },
@@ -32,8 +33,25 @@ describe("applyRailOrder", () => {
     ]);
   });
 
+  it("keeps duplicate-keyed items together and in list order", () => {
+    const duplicated = [
+      { id: "a" },
+      { id: "sep" },
+      { id: "b" },
+      { id: "sep" },
+      { id: "c" },
+    ];
+    expect(applyRailOrder(duplicated, ["c", "a"], (item) => item.id)).toEqual([
+      { id: "c" },
+      { id: "a" },
+      { id: "sep" },
+      { id: "b" },
+      { id: "sep" },
+    ]);
+  });
+
   it("ignores order entries that reference missing items", () => {
-    expect(applyRailOrder(ITEMS, ["zzz", "b", "yyy"])).toEqual([
+    expect(applyRailOrder(ITEMS, ["zzz", "b", "yyy"], keyOf)).toEqual([
       { id: "b" },
       { id: "a" },
       { id: "c" },
