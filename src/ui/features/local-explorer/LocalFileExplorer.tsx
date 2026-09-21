@@ -476,10 +476,10 @@ export function LocalFileExplorer({
   // typed, extend the last segment to the common prefix of the matches and,
   // when several candidates remain, offer the classic list to pick from.
   const completePath = useCallback(async () => {
-    const { listDir } = splitCompletionInput(pathInput);
+    const { listDir, prefix } = splitCompletionInput(pathInput);
     const res = await localFsList(listDir, "");
     if (res.error) return;
-    const matches = completionMatches(pathInput, res.entries);
+    const matches = completionMatches(prefix, res.entries);
     if (matches.length === 0) {
       setSuggestions([]);
       return;

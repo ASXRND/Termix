@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  completePathIn,
   completePathInput,
   completionMatches,
   joinAbsolute,
@@ -71,7 +72,7 @@ describe("joinAbsolute", () => {
 
 describe("completionMatches", () => {
   it("matches case-insensitively, folders first, then alphabetically", () => {
-    expect(completionMatches("/x/d", ENTRIES).map((e) => e.name)).toEqual([
+    expect(completionMatches("d", ENTRIES).map((e) => e.name)).toEqual([
       "Desktop",
       "Documents",
       "Downloads",
@@ -80,11 +81,26 @@ describe("completionMatches", () => {
   });
 
   it("returns every entry when the prefix is empty", () => {
-    expect(completionMatches("/Users/", ENTRIES)).toHaveLength(ENTRIES.length);
+    expect(completionMatches("", ENTRIES)).toHaveLength(ENTRIES.length);
   });
 
   it("returns nothing for an unmatched prefix", () => {
-    expect(completionMatches("/Users/zzz", ENTRIES)).toEqual([]);
+    expect(completionMatches("zzz", ENTRIES)).toEqual([]);
+  });
+});
+
+describe("completePathIn", () => {
+  it("uses the directory the caller resolved, not the typed one", () => {
+    // The SSH bar resolves "~" to /home/me before listing, and the completion
+    // must come back as an absolute path the file manager can navigate to.
+    expect(completePathIn("/home/me", "Do", ENTRIES)).toBe("/home/me/Do");
+    expect(completePathIn("/home/me", "Doc", ENTRIES)).toBe(
+      "/home/me/Documents/",
+    );
+  });
+
+  it("returns null when nothing matches or nothing is shared", () => {
+    expect(completePathIn("/home/me", "zz", ENTRIES)).toBeNull();
   });
 });
 

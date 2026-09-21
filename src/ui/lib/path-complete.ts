@@ -52,12 +52,14 @@ export function joinAbsolute(dir: string, name: string): string {
   return `${dir}/${name}`;
 }
 
-/** Candidates matching the typed path, directories first, name-sorted. */
+/**
+ * Candidates whose name starts with `prefix`, directories first, then sorted by
+ * name. The prefix is compared case-insensitively.
+ */
 export function completionMatches(
-  input: string,
+  prefix: string,
   entries: CompletionEntry[],
 ): CompletionEntry[] {
-  const { prefix } = splitCompletionInput(input);
   const needle = prefix.toLowerCase();
   return entries
     .filter((entry) => entry.name.toLowerCase().startsWith(needle))
@@ -65,6 +67,26 @@ export function completionMatches(
       (a, b) =>
         Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name),
     );
+}
+
+/**
+ * Completed absolute path inside `dir` for the incomplete `prefix`, or null
+ * when nothing matches. The prefix is extended to the common prefix of the
+ * matches; a single directory match also gets a trailing slash so the next Tab
+ * descends into it. `dir` is passed explicitly because callers may have had to
+ * resolve it first (the SSH bar resolves "~" before listing).
+ */
+export function completePathIn(
+  dir: string,
+  prefix: string,
+  entries: CompletionEntry[],
+): string | null {
+  const matches = completionMatches(prefix, entries);
+  if (matches.length === 0) return null;
+  const common = longestCommonPrefix(matches.map((match) => match.name));
+  if (common === "") return null;
+  const suffix = matches.length === 1 && matches[0].isDir ? "/" : "";
+  return `${joinAbsolute(dir, common)}${suffix}`;
 }
 
 /**
@@ -76,11 +98,6 @@ export function completePathInput(
   input: string,
   entries: CompletionEntry[],
 ): string | null {
-  const { listDir } = splitCompletionInput(input);
-  const matches = completionMatches(input, entries);
-  if (matches.length === 0) return null;
-  const common = longestCommonPrefix(matches.map((match) => match.name));
-  if (common === "") return null;
-  const suffix = matches.length === 1 && matches[0].isDir ? "/" : "";
-  return `${joinAbsolute(listDir, common)}${suffix}`;
+  const { listDir, prefix } = splitCompletionInput(input);
+  return completePathIn(listDir, prefix, entries);
 }

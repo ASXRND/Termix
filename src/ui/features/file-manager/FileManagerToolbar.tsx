@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/button.tsx";
 import { Input } from "@/components/input.tsx";
-import { listSSHFiles } from "@/main-axios.ts";
+import { listSSHFiles, resolveSSHPath } from "@/main-axios.ts";
 import {
-  completePathInput,
+  completePathIn,
   completionMatches,
   joinAbsolute,
   splitCompletionInput,
@@ -175,13 +175,17 @@ function PathBar({
    */
   const complete = async () => {
     if (!sshSessionId) return;
-    const { listDir } = splitCompletionInput(value);
+    const { listDir, prefix } = splitCompletionInput(value);
     const request = requestRef.current + 1;
     requestRef.current = request;
     try {
-      const res = await listSSHFiles(sshSessionId, listDir);
+      // The bar starts from "~" as often as from "/", so resolve first.
+      const resolvedDir = listDir.startsWith("/")
+        ? listDir
+        : await resolveSSHPath(sshSessionId, listDir);
       // A newer keystroke superseded this listing.
       if (requestRef.current !== request) return;
+      const res = await listSSHFiles(sshSessionId, resolvedDir);
       const entries = (res.files ?? [])
         .filter((file) => file.type === "directory")
         .map((file) => ({ name: file.name, isDir: true }));
@@ -189,14 +193,14 @@ function PathBar({
         setSuggestions([]);
         return;
       }
-      const completed = completePathInput(value, entries);
+      const completed = completePathIn(resolvedDir, prefix, entries);
       if (completed) setValue(completed);
-      const matches = completionMatches(value, entries);
+      const matches = completionMatches(prefix, entries);
       setSuggestions(
         matches.length > 1
           ? matches
               .slice(0, MAX_PATH_SUGGESTIONS)
-              .map((match) => joinAbsolute(listDir, match.name))
+              .map((match) => joinAbsolute(resolvedDir, match.name))
           : [],
       );
       setSuggestionIndex(0);
