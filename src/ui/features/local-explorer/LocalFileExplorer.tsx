@@ -105,6 +105,22 @@ export function LocalFileExplorer({
   >(null);
   /** Container of the tree; keyboard copy/paste only fire when focus is here. */
   const treeRef = useRef<HTMLDivElement>(null);
+  /** Path bar wrapper: clicking outside it dismisses the Tab suggestions. */
+  const pathBarRef = useRef<HTMLDivElement>(null);
+
+  // A candidate list that survives a click somewhere else looks stuck, so
+  // close it as soon as the pointer goes down outside the path bar.
+  useEffect(() => {
+    if (suggestions.length === 0) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && pathBarRef.current?.contains(target))
+        return;
+      setSuggestions([]);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [suggestions.length]);
 
   // Resolve the starting folder once: the home dir (so the tree does not open
   // at the device root), or wherever the local shell already reported being.
@@ -489,15 +505,23 @@ export function LocalFileExplorer({
   }, [pathInput]);
 
   /** Navigates to a suggestion picked from the completion list. */
-  const pickSuggestion = useCallback((suggestion: PathSuggestion) => {
-    setSuggestions([]);
-    setPathInput(suggestion.path);
-    if (!suggestion.isDir) return;
-    // The path came straight from a directory listing, so it is valid.
-    setFollow(false);
-    setPathError(null);
-    setRoot(suggestion.path);
-  }, []);
+  const pickSuggestion = useCallback(
+    (suggestion: PathSuggestion) => {
+      setSuggestions([]);
+      setPathInput(suggestion.path);
+      if (suggestion.isDir) {
+        // The path came straight from a directory listing, so it is valid.
+        setFollow(false);
+        setPathError(null);
+        setRoot(suggestion.path);
+        return;
+      }
+      // A file suggestion opens straight as an editor tab.
+      if (!root) return;
+      onOpenFile(fileTarget(root, suggestion.path, suggestion.name));
+    },
+    [onOpenFile, root],
+  );
 
   const showSkeleton =
     booting || Boolean(root && !tree && !loadError && loading);
@@ -562,7 +586,10 @@ export function LocalFileExplorer({
       </div>
 
       {root && (
-        <div className="border-b border-sidebar-border px-2 py-1.5">
+        <div
+          ref={pathBarRef}
+          className="border-b border-sidebar-border px-2 py-1.5"
+        >
           <form
             className="flex items-center gap-1"
             onSubmit={(event) => {

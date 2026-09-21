@@ -3,6 +3,7 @@ import {
   addTreeChild,
   buildChildren,
   collapseTree,
+  findNode,
   joinRel,
   rebuildTree,
 } from "@/features/local-explorer/localFsTree";
@@ -91,6 +92,56 @@ describe("collapseTree", () => {
       "docs",
     );
     expect(Object.keys(expanded).sort()).toEqual(["", "other"]);
+  });
+});
+
+describe("findNode", () => {
+  // The keyboard copy handler resolves the selected row through this lookup,
+  // so a miss silently breaks ⌘C without any error.
+  const tree = {
+    name: "",
+    rel: "",
+    absPath: "/Users/x",
+    isDir: true,
+    children: [
+      {
+        name: "docs",
+        rel: "docs",
+        absPath: "/Users/x/docs",
+        isDir: true,
+        children: [
+          {
+            name: "notes.txt",
+            rel: "docs/notes.txt",
+            absPath: "/Users/x/docs/notes.txt",
+            isDir: false,
+          },
+        ],
+      },
+      {
+        name: "a.txt",
+        rel: "a.txt",
+        absPath: "/Users/x/a.txt",
+        isDir: false,
+      },
+    ],
+  };
+
+  it("finds the root, a nested entry and a leaf", () => {
+    expect(findNode(tree, "")?.rel).toBe("");
+    expect(findNode(tree, "docs")?.name).toBe("docs");
+    expect(findNode(tree, "docs/notes.txt")?.isDir).toBe(false);
+    expect(findNode(tree, "a.txt")?.absPath).toBe("/Users/x/a.txt");
+  });
+
+  it("returns null for an unknown rel", () => {
+    expect(findNode(tree, "docs/missing")).toBeNull();
+  });
+
+  it("tolerates a node without children", () => {
+    expect(
+      findNode({ name: "a", rel: "a", absPath: "/a", isDir: false }, "b"),
+    ).toBeNull();
   });
 });
 

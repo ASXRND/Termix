@@ -66,24 +66,37 @@ if (sdkRoot) {
 const arch = process.arch === "x64" ? "x64" : "arm64";
 const appPath = path.join(rootDir, "release", `mac-${arch}`, "Termix.app");
 
-// Патчи node_modules: на свежем клоне postinstall может быть пропущен
-// (например, из-за политики allowScripts в npm 12), поэтому применяем их явно
-// до компиляции нативных модулей.
-run("node", ["scripts/patch-better-sqlite3.cjs"], env);
-run("node", ["scripts/patch-nan.cjs"], env);
-run("node", ["scripts/patch-node-pty.cjs"], env);
+// SKIP_NATIVE=1 — быстрый цикл: нативные модули уже собраны под текущий
+// Electron, а патчи node_modules и electron-rebuild занимают минуты. Полный
+// прогон нужен после смены версии Electron или node-pty/better-sqlite3.
+const skipNative = process.env.SKIP_NATIVE === "1";
+
+if (skipNative) {
+  console.log(
+    "[build:mac-local] SKIP_NATIVE=1 — патчи node_modules и electron-rebuild пропущены",
+  );
+} else {
+  // Патчи node_modules: на свежем клоне postinstall может быть пропущен
+  // (например, из-за политики allowScripts в npm 12), поэтому применяем их явно
+  // до компиляции нативных модулей.
+  run("node", ["scripts/patch-better-sqlite3.cjs"], env);
+  run("node", ["scripts/patch-nan.cjs"], env);
+  run("node", ["scripts/patch-node-pty.cjs"], env);
+}
 
 run("npm", ["run", "build"], env);
-run(
-  "npx",
-  [
-    "electron-rebuild",
-    "-f",
-    "-o",
-    "better-sqlite3,@serialport/bindings-cpp,node-pty",
-  ],
-  env,
-);
+if (!skipNative) {
+  run(
+    "npx",
+    [
+      "electron-rebuild",
+      "-f",
+      "-o",
+      "better-sqlite3,@serialport/bindings-cpp,node-pty",
+    ],
+    env,
+  );
+}
 run("npm", ["run", "electron:patch-builder"], env);
 run(
   "npx",
