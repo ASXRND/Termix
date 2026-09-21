@@ -18,6 +18,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/button.tsx";
 import { Input } from "@/components/input.tsx";
+import { listSSHFiles } from "@/main-axios.ts";
+import {
+  completePathInput,
+  completionMatches,
+  joinAbsolute,
+  splitCompletionInput,
+} from "@/lib/path-complete";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,18 +115,30 @@ function Breadcrumb({
   );
 }
 
+/** Cap on rendered candidates: the list is a picker, not a directory dump. */
+const MAX_PATH_SUGGESTIONS = 8;
+
 function PathBar({
   currentPath,
   navigateTo,
   t,
+  sshSessionId,
   className,
-}: Pick<FileManagerToolbarProps, "currentPath" | "navigateTo" | "t"> & {
+}: Pick<
+  FileManagerToolbarProps,
+  "currentPath" | "navigateTo" | "t" | "sshSessionId"
+> & {
   className: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(currentPath);
+  /** Tab-completion candidates for the typed path, remote folders only. */
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const doneRef = useRef(false);
+  /** Guards against a stale listing answering after a newer keystroke. */
+  const requestRef = useRef(0);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -135,6 +154,7 @@ function PathBar({
     if (doneRef.current) return;
     doneRef.current = true;
     setIsEditing(false);
+    setSuggestions([]);
     const trimmed = path.trim();
     if (trimmed && trimmed !== currentPath) {
       navigateTo(trimmed);
@@ -145,29 +165,139 @@ function PathBar({
     if (doneRef.current) return;
     doneRef.current = true;
     setIsEditing(false);
+    setSuggestions([]);
   };
+
+  /**
+   * Tab completion, shell-style: list the folder being typed on the remote host
+   * and extend the last segment to the common prefix of its subfolders. Only
+   * directories are offered — the bar navigates, it cannot open a file.
+   */
+  const complete = async () => {
+    if (!sshSessionId) return;
+    const { listDir } = splitCompletionInput(value);
+    const request = requestRef.current + 1;
+    requestRef.current = request;
+    try {
+      const res = await listSSHFiles(sshSessionId, listDir);
+      // A newer keystroke superseded this listing.
+      if (requestRef.current !== request) return;
+      const entries = (res.files ?? [])
+        .filter((file) => file.type === "directory")
+        .map((file) => ({ name: file.name, isDir: true }));
+      if (entries.length === 0) {
+        setSuggestions([]);
+        return;
+      }
+      const completed = completePathInput(value, entries);
+      if (completed) setValue(completed);
+      const matches = completionMatches(value, entries);
+      setSuggestions(
+        matches.length > 1
+          ? matches
+              .slice(0, MAX_PATH_SUGGESTIONS)
+              .map((match) => joinAbsolute(listDir, match.name))
+          : [],
+      );
+      setSuggestionIndex(0);
+    } catch {
+      // No permission, dead session, path gone: complete nothing.
+      setSuggestions([]);
+    }
+  };
+
+  /** Takes a candidate and navigates (commit closes the bar). */
+  const pick = (path: string) => commit(path);
 
   if (isEditing) {
     return (
-      <div className={className}>
+      // The read-only bar clips its content; the suggestion list must not be
+      // cut off, so overflow-hidden is dropped while editing.
+      <div
+        className={`${className
+          .split(" ")
+          .filter((cls) => cls !== "overflow-hidden")
+          .join(" ")} relative`}
+      >
         <Folder className="size-3.5 text-accent-brand shrink-0" />
         <input
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          aria-label={t("fileManager.pathLabel")}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setSuggestions([]);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Tab") {
               e.preventDefault();
-              commit(value);
+              void complete();
+              return;
+            }
+            if (suggestions.length === 0) {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit(value);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+              }
+              return;
+            }
+            // A candidate list is open: arrows walk it, Enter takes the pick.
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setSuggestionIndex((i) => (i + 1) % suggestions.length);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setSuggestionIndex(
+                (i) => (i - 1 + suggestions.length) % suggestions.length,
+              );
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              pick(suggestions[suggestionIndex]);
             } else if (e.key === "Escape") {
               e.preventDefault();
-              cancel();
+              setSuggestions([]);
             }
           }}
           onBlur={() => commit(value)}
           className="flex-1 min-w-0 bg-transparent text-xs font-semibold tracking-wide outline-none text-foreground"
         />
+        {suggestions.length > 0 && (
+          <ul
+            role="listbox"
+            aria-label={t("fileManager.pathSuggestions")}
+            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-44 overflow-y-auto rounded border border-border bg-popover py-0.5 shadow-lg"
+          >
+            {suggestions.map((path, index) => (
+              <li key={path}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === suggestionIndex}
+                  title={path}
+                  // pointerdown fires before the input's blur, which would
+                  // otherwise commit the raw text and swallow the click.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(path);
+                  }}
+                  onMouseEnter={() => setSuggestionIndex(index)}
+                  className={`flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-xs ${
+                    index === suggestionIndex
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50"
+                  }`}
+                >
+                  <Folder className="size-3 shrink-0 text-accent-brand" />
+                  <span className="truncate">{path.split("/").pop()}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -269,6 +399,7 @@ export function FileManagerToolbar({
           currentPath={currentPath}
           navigateTo={navigateTo}
           t={t}
+          sshSessionId={sshSessionId}
           className="hidden md:flex flex-1 items-center px-3 h-8 bg-muted/50 border border-border rounded-none gap-2 overflow-hidden"
         />
 
@@ -430,6 +561,7 @@ export function FileManagerToolbar({
           currentPath={currentPath}
           navigateTo={navigateTo}
           t={t}
+          sshSessionId={sshSessionId}
           className="flex-1 flex items-center px-3 h-8 bg-muted/50 border border-border gap-2 overflow-hidden"
         />
       </div>

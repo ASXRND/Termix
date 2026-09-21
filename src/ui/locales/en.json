@@ -2016,6 +2016,8 @@
   "fileManager": {
     "noHostSelected": "No host selected",
     "resizeSidebar": "Drag to resize the folders panel",
+    "pathLabel": "Folder path",
+    "pathSuggestions": "Matching folders",
     "initializingEditor": "Initializing editor...",
     "file": "File",
     "folder": "Folder",

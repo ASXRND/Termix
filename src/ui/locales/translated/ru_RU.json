@@ -2017,6 +2017,8 @@
   "fileManager": {
     "noHostSelected": "Хост не выбран",
     "resizeSidebar": "Потяните, чтобы изменить ширину панели папок",
+    "pathLabel": "Путь к папке",
+    "pathSuggestions": "Подходящие папки",
     "initializingEditor": "Инициализация редактора...",
     "file": "Файл",
     "folder": "Папка",
