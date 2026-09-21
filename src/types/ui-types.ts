@@ -241,6 +241,7 @@ export type TabType =
   | "dashboard"
   | "terminal"
   | "local-terminal"
+  | "local-file"
   | "rdp"
   | "vnc"
   | "telnet"
@@ -277,6 +278,17 @@ export type SerialConfig = {
   parity: "none" | "even" | "odd";
 };
 
+/**
+ * A local file opened in an editor tab. The tree root is kept alongside the
+ * relative path because the local-fs IPC authorises every request against it.
+ */
+export type LocalFileTarget = {
+  root: string;
+  rel: string;
+  absPath: string;
+  name: string;
+};
+
 export type Tab = {
   id: string;
   instanceId: string;
@@ -289,6 +301,8 @@ export type Tab = {
   /** Set when this tab joins someone else's live shared session instead of connecting/attaching its own. */
   joinSharedSessionId?: string | null;
   joinShareId?: string | null;
+  /** Which local file a "local-file" editor tab is showing. */
+  localFile?: LocalFileTarget;
   initialFilePath?: string;
   /** Directory to open a Files tab into, distinct from initialFilePath (a specific file to open in an editor window). */
   initialPath?: string;

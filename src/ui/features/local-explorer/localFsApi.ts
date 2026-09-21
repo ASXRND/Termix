@@ -37,6 +37,100 @@ export function localFsOpen(target: string): Promise<boolean> {
   return api()?.open(target) ?? Promise.resolve(false);
 }
 
+/** Saves an editable file back to disk; used by the local editor tabs. */
+export function localFsWrite(
+  root: string,
+  rel: string,
+  content: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  return (
+    api()?.write(root, rel, content) ?? Promise.resolve({ error: "unknown" })
+  );
+}
+
+/** Reveals a file or folder in the OS file manager. */
+export function localFsReveal(target: string): Promise<boolean> {
+  return api()?.reveal(target) ?? Promise.resolve(false);
+}
+
+export function localFsRename(
+  root: string,
+  rel: string,
+  name: string,
+): Promise<{ ok?: boolean; name?: string; error?: string }> {
+  return (
+    api()?.rename(root, rel, name) ?? Promise.resolve({ error: "unknown" })
+  );
+}
+
+/** Recoverable delete: the entry goes to the OS trash, not oblivion. */
+export function localFsTrash(
+  root: string,
+  rel: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  return api()?.trash(root, rel) ?? Promise.resolve({ error: "unknown" });
+}
+
+export function localFsDuplicate(
+  root: string,
+  rel: string,
+): Promise<{ ok?: boolean; name?: string; error?: string }> {
+  return api()?.duplicate(root, rel) ?? Promise.resolve({ error: "unknown" });
+}
+
+/** Copies an entry into another folder of the same root (paste). */
+export function localFsCopyInto(
+  root: string,
+  sourceRel: string,
+  destDirRel: string,
+): Promise<{ ok?: boolean; name?: string; error?: string }> {
+  return (
+    api()?.copyInto(root, sourceRel, destDirRel) ??
+    Promise.resolve({ error: "unknown" })
+  );
+}
+
+/** Reads file references (Finder copies) from the system clipboard. */
+export function localFsClipboardFiles(): Promise<{
+  paths: string[];
+  error?: string;
+}> {
+  return (
+    api()?.clipboardFiles() ?? Promise.resolve({ paths: [], error: "unknown" })
+  );
+}
+
+/** Puts file references on the system clipboard (so Finder can paste). */
+export function localFsWriteClipboardFiles(
+  paths: string[],
+): Promise<{ ok?: boolean; error?: string }> {
+  return (
+    api()?.writeClipboardFiles(paths) ?? Promise.resolve({ error: "unknown" })
+  );
+}
+
+/** Copies an absolute path from outside the root into a root folder. */
+export function localFsCopyExternalInto(
+  root: string,
+  sourceAbs: string,
+  destDirRel: string,
+): Promise<{ ok?: boolean; name?: string; error?: string }> {
+  return (
+    api()?.copyExternalInto(root, sourceAbs, destDirRel) ??
+    Promise.resolve({ error: "unknown" })
+  );
+}
+
+export function localFsCreate(
+  root: string,
+  dirRel: string,
+  kind: "file" | "folder",
+): Promise<{ ok?: boolean; name?: string; error?: string }> {
+  return (
+    api()?.create(root, dirRel, kind) ?? Promise.resolve({ error: "unknown" })
+  );
+}
+
 /**
  * Home dir without its last segment — used as the tree root so the user can
  * still navigate above their home folder, like VS Code's workspace root.

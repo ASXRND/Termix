@@ -22,18 +22,72 @@
 
 ---
 
+## 0.0. Быстрый запуск из исходников для проверки правок UI (опционально)
+
+**Основной путь проверки правок — пересборка:** `npm run build:mac-local`
+(~2 минуты), потом копирование в `/Applications` (раздел 3.3). Так делаем, если
+dev-режим непонятен или нужен финальный прогон. 21.09.2026 пересобрано и
+установлено в `/Applications` именно так.
+
+Dev-режим ниже — ускоренный вариант для правок UI, **приложение из
+`/Applications` он не трогает**:
+
+Правки, затрагивающие UI (React/vite: `src/ui/**`) и electron-часть без нативных
+модулей (`electron/local-fs.cjs`, `electron/preload.js`), можно проверять без
+полной пересборки приложения. Причина:
+
+- electron при запуске из клона (`!app.isPackaged` → `isDev` в
+  `electron/main.cjs:621`) грузит рендерер с vite dev-сервера
+  `http://localhost:5173` (`main.cjs:1254`), а не из `dist/index.html`;
+- `electron/main.cjs`, `preload.js` и `local-fs.cjs` читаются напрямую из папки
+  `electron/` — бандлу они не принадлежат;
+- backend форкается из `dist/backend/backend/starter.js` (уже собран, backend
+  правками не затрагивался), порт 30001.
+
+Запуск (скрипт `npm run electron:dev` написан под Windows/PowerShell, на macOS —
+вручную):
+
+```bash
+# Терминал 1 — vite dev server (порт 5173, HMR):
+npm run dev
+
+# Терминал 2 — electron поверх него (из корня клона):
+npx electron .
+```
+
+Или одной командой:
+
+```bash
+npx concurrently "npm run dev" "sleep 5 && npx electron ."
+```
+
+Что происходит: окно грузит `localhost:5173` (свежий UI, правки сразу видны,
+HMR подхватывает правки файлов на лету), electron сам поднимает backend из
+`dist/`, открываются DevTools.
+
+Когда пересборка всё-таки нужна (`npm run build && npm run build:mac-dev`, см.
+далее): изменены нативные модули или их сборка, изменилась конфигурация
+electron-builder, правился backend (`src/backend/**`), или нужно проверять
+упакованное приложение в `/Applications`.
+
+Текущий прогон перед запуском (после правок вкладок локального проводника):
+`tsc --noEmit` — чисто; vitest — 345 файлов / 2659 тестов прошли (1 skipped);
+eslint по затронутым файлам — без замечаний.
+
+---
+
 ## 0. Статус на 20.09.2026
 
-| Что                              | Состояние                                                                    |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| `/Applications/Termix.app`       | собрано из этого клона, ad-hoc подписано, **работает**                       |
-| Локальный терминал               | проверен трижды (GUI-репро, упакованное приложение, копия в `/Applications`) |
-| `spawn-helper` внутри приложения | `-rwxr-xr-x` + пропатченная версия (см. раздел 3.1)                          |
-| Данные (хосты, ключи)            | на месте: `~/Library/Application Support/termix`                             |
-| Homebrew-версия                  | удалена, `brew list --cask` её не показывает                                 |
-| Форк и ветка                     | https://github.com/ASXRND/Termix → `local/macos-pty-fixes` запушена          |
-| Бэкап ветки                      | `~/Desktop/termix-local-fixes.bundle` (12 МБ, `git bundle verify` → ok)      |
-| Локальный проводник (Files)      | в правом доке (виден при разбивке окна), следит за `cd` терминала — раздел 14 |
+| Что                              | Состояние                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/Applications/Termix.app`       | собрано из этого клона, ad-hoc подписано, **работает**                                                       |
+| Локальный терминал               | проверен трижды (GUI-репро, упакованное приложение, копия в `/Applications`)                                 |
+| `spawn-helper` внутри приложения | `-rwxr-xr-x` + пропатченная версия (см. раздел 3.1)                                                          |
+| Данные (хосты, ключи)            | на месте: `~/Library/Application Support/termix`                                                             |
+| Homebrew-версия                  | удалена, `brew list --cask` её не показывает                                                                 |
+| Форк и ветка                     | https://github.com/ASXRND/Termix → `local/macos-pty-fixes` запушена                                          |
+| Бэкап ветки                      | `~/Desktop/termix-local-fixes.bundle` (12 МБ, `git bundle verify` → ok)                                      |
+| Локальный проводник (Files)      | в правом доке (виден при разбивке окна), следит за `cd` терминала — раздел 14                                |
 | Коммиты                          | `554f7d1` (фиксы), `8186ce6` (docs), `90ee5d8` (проводник), `92bf0fb` (следование за терминалом) — раздел 12 |
 
 ---
@@ -458,14 +512,14 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 
 ## 12. История коммитов (ветка `local/macos-pty-fixes`)
 
-| Коммит    | Сообщение                                                        | Содержимое                                                                                                                                                                                              |
-| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `554f7d1` | `fix(macos): make the local terminal work (posix_spawnp failed)` | 6 файлов, +947 строк: `scripts/patch-node-pty.cjs` (новый), `scripts/build-mac-local.cjs` (новый), `packaging/build/after-pack.cjs`, `scripts/patch-nan.cjs`, `package.json`, `README_LOCAL.md` (новый) |
-| `8186ce6` | `docs: указать форк origin и команды push/восстановления`        | актуализация раздела 11                                                                                                                                                                                 |
-| `90ee5d8` | `feat(local-explorer): VS Code-style local file explorer in the right dock` | проводник в правом доке: `electron/local-fs.cjs` (новый), `src/ui/features/local-explorer/*` (новые), иконка рейла + автопоказ, i18n en/ru, тесты дерева |
-| `92bf0fb` | `feat(local-explorer): follow the terminal cwd (OSC 7) and allow a manual path` | `electron/cwd-osc7.cjs` и `electron/shell-integration.cjs` (новые), `localCwdStore.ts`, следование за `cd`, путь-инпут, корень `$HOME`, +29 тестов |
-| далее     | коммиты `docs:` — обновления этого файла                         | разделы 0, 12, 13 и правки по ходу работы                                                                                                                                                               |
-| `9c04860` | `chore: sync Crowdin translations`                               | база: клон upstream, наши коммиты идут поверх него                                                                                                                                                      |
+| Коммит    | Сообщение                                                                       | Содержимое                                                                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `554f7d1` | `fix(macos): make the local terminal work (posix_spawnp failed)`                | 6 файлов, +947 строк: `scripts/patch-node-pty.cjs` (новый), `scripts/build-mac-local.cjs` (новый), `packaging/build/after-pack.cjs`, `scripts/patch-nan.cjs`, `package.json`, `README_LOCAL.md` (новый) |
+| `8186ce6` | `docs: указать форк origin и команды push/восстановления`                       | актуализация раздела 11                                                                                                                                                                                 |
+| `90ee5d8` | `feat(local-explorer): VS Code-style local file explorer in the right dock`     | проводник в правом доке: `electron/local-fs.cjs` (новый), `src/ui/features/local-explorer/*` (новые), иконка рейла + автопоказ, i18n en/ru, тесты дерева                                                |
+| `92bf0fb` | `feat(local-explorer): follow the terminal cwd (OSC 7) and allow a manual path` | `electron/cwd-osc7.cjs` и `electron/shell-integration.cjs` (новые), `localCwdStore.ts`, следование за `cd`, путь-инпут, корень `$HOME`, +29 тестов                                                      |
+| далее     | коммиты `docs:` — обновления этого файла                                        | разделы 0, 12, 13 и правки по ходу работы                                                                                                                                                               |
+| `9c04860` | `chore: sync Crowdin translations`                                              | база: клон upstream, наши коммиты идут поверх него                                                                                                                                                      |
 
 Полезные команды:
 
@@ -523,18 +577,18 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 
 Как это работает:
 
-| Слой             | Файл/точка                                            | Что делает                                                                                             |
-| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| IPC main         | `electron/local-fs.cjs` (новый) + хук в `main.cjs`    | `local-fs:list/read/open`: readdir + превью (текст ≤512 КБ, картинки в base64), guard от `../`-обхода |
-| preload          | `electron/preload.js` → `electronAPI.localFs`         | whitelisted-каналы для рендерера                                                                      |
-| API-клиент       | `src/ui/features/local-explorer/localFsApi.ts`        | degrade в браузерной сборке (`localFsAvailable()`)                                                     |
-| дерево           | `localFsTree.ts` (чистые функции) + `LocalFileTree.tsx`| ленивые дети, только папки раскрываются                                                                |
-| панель           | `LocalFileExplorer.tsx` + `LocalFilePreview.tsx`      | дерево + превью (текст/картинка/бинарник → «открыть внешне»)                                           |
-| правый док       | `rail-items.ts`: id `local-explorer`, `rightDockable` | иконка FolderTree, electronOnly; кейс в `AppShell.tsx` (renderSidebarPanels)                            |
-| автопоказ        | `AppShell.tsx`, useEffect по `activeTabType`          | `setRightRailView(current ?? "local-explorer")` при вкладке `local-terminal`                           |
-| типы             | `ui-types.ts` (`LocalFsEntry`, `LocalFsReadResult`), `ui-preferences.ts` (`HideableRailView`), `electron.d.ts` (`localFs`) |   |
-| i18n             | `en.json` / `translated/ru_RU.json`: `nav.localExplorer`, блок `localExplorer`                        | en/ru синхронизированы (край файла)                                                                     |
-| тесты            | `src/ui/tests/features/local-explorer.test.ts`, обновлён `rail-items.test.ts`                         | дерево (toRel/parentOfHome/sort), ключи локалей, списки рейла                                           |
+| Слой       | Файл/точка                                                                                                                 | Что делает                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| IPC main   | `electron/local-fs.cjs` (новый) + хук в `main.cjs`                                                                         | `local-fs:list/read/open`: readdir + превью (текст ≤512 КБ, картинки в base64), guard от `../`-обхода |
+| preload    | `electron/preload.js` → `electronAPI.localFs`                                                                              | whitelisted-каналы для рендерера                                                                      |
+| API-клиент | `src/ui/features/local-explorer/localFsApi.ts`                                                                             | degrade в браузерной сборке (`localFsAvailable()`)                                                    |
+| дерево     | `localFsTree.ts` (чистые функции) + `LocalFileTree.tsx`                                                                    | ленивые дети, только папки раскрываются                                                               |
+| панель     | `LocalFileExplorer.tsx` + `LocalFilePreview.tsx`                                                                           | дерево + превью (текст/картинка/бинарник → «открыть внешне»)                                          |
+| правый док | `rail-items.ts`: id `local-explorer`, `rightDockable`                                                                      | иконка FolderTree, electronOnly; кейс в `AppShell.tsx` (renderSidebarPanels)                          |
+| автопоказ  | `AppShell.tsx`, useEffect по `activeTabType`                                                                               | `setRightRailView(current ?? "local-explorer")` при вкладке `local-terminal`                          |
+| типы       | `ui-types.ts` (`LocalFsEntry`, `LocalFsReadResult`), `ui-preferences.ts` (`HideableRailView`), `electron.d.ts` (`localFs`) |                                                                                                       |
+| i18n       | `en.json` / `translated/ru_RU.json`: `nav.localExplorer`, блок `localExplorer`                                             | en/ru синхронизированы (край файла)                                                                   |
+| тесты      | `src/ui/tests/features/local-explorer.test.ts`, обновлён `rail-items.test.ts`                                              | дерево (toRel/parentOfHome/sort), ключи локалей, списки рейла                                         |
 
 Корень дерева — `$HOME` (переопределено 20.09.2026 по замечанию: раньше
 открывался `dirname($HOME)`, из-за чего казалось, что панель стартует «в корне
@@ -545,15 +599,15 @@ git bundle create ~/Desktop/termix-local-fixes.bundle main local/macos-pty-fixes
 
 ### 14.1 Следование за терминалом (OSC 7) и ручной путь
 
-| Слой                | Файл/точка                                          | Что делает                                                                                          |
-| ------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| инъекция шелла      | `electron/shell-integration.cjs` (новый)            | zsh → `ZDOTDIR` с `.zshenv/.zprofile/.zlogin/.zshrc`, bash → `--rcfile`; в конец добавляется хук cwd |
-| детектор            | `electron/cwd-osc7.cjs` (новый)                     | потоковый парсер `ESC ] 7 ; file://HOST/PATH` (BEL или ST), переживает любую нарезку чанков         |
-| проводка            | `main.cjs` (`local-terminal-start`)                 | каждый чанк идёт в детектор → `local-terminal:cwd:<sessionId>` в рендерер                            |
-| preload/типы        | `preload.js` → `onLocalTerminalCwd`, `electron.d.ts` | подписка на cwd, отписка возвращается                                                                |
-| публикация          | `LocalTerminal.tsx`                                 | `reportLocalCwd(dir)` при каждом `cd`                                                                |
-| стор                | `local-explorer/localCwdStore.ts` (новый)           | pub/sub без проп-дриллинга: терминал публикует, проводник подписан                                  |
-| проводник           | `LocalFileExplorer.tsx`                             | кнопка-«звено» (вкл/выкл слежение), путь-инпут + Enter, откат к ближайшему читаемому родителю         |
+| Слой           | Файл/точка                                           | Что делает                                                                                           |
+| -------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| инъекция шелла | `electron/shell-integration.cjs` (новый)             | zsh → `ZDOTDIR` с `.zshenv/.zprofile/.zlogin/.zshrc`, bash → `--rcfile`; в конец добавляется хук cwd |
+| детектор       | `electron/cwd-osc7.cjs` (новый)                      | потоковый парсер `ESC ] 7 ; file://HOST/PATH` (BEL или ST), переживает любую нарезку чанков          |
+| проводка       | `main.cjs` (`local-terminal-start`)                  | каждый чанк идёт в детектор → `local-terminal:cwd:<sessionId>` в рендерер                            |
+| preload/типы   | `preload.js` → `onLocalTerminalCwd`, `electron.d.ts` | подписка на cwd, отписка возвращается                                                                |
+| публикация     | `LocalTerminal.tsx`                                  | `reportLocalCwd(dir)` при каждом `cd`                                                                |
+| стор           | `local-explorer/localCwdStore.ts` (новый)            | pub/sub без проп-дриллинга: терминал публикует, проводник подписан                                   |
+| проводник      | `LocalFileExplorer.tsx`                              | кнопка-«звено» (вкл/выкл слежение), путь-инпут + Enter, откат к ближайшему читаемому родителю        |
 
 Механика: шелл сам печатает `OSC 7` в приглашении (`precmd` в zsh,
 `PROMPT_COMMAND` в bash) — это тот же протокол, что используют VS Code и
@@ -565,6 +619,7 @@ iTerm2. Хук **дописывается** к rc-файлам пользова�
 раньше.
 
 Поведение:
+
 - слежение включено по умолчанию; `cd` в терминале → дерево переезжает;
 - если каталог удалён/недоступен — откат к ближайшему листаемому родителю
   (`ancestorsOf` + `firstListable`), панель не остаётся пустой;

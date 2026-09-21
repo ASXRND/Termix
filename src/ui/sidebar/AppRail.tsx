@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bell,
   Check,
   LogOut,
   PanelRight,
+  RotateCcw,
   Settings,
   SlidersHorizontal,
   SquareArrowOutUpRight,
@@ -15,6 +16,14 @@ import { getAlertFirings } from "@/api/alerts-api";
 import { isElectron } from "@/lib/electron";
 import { readRailPreference, setRailPreference } from "./rail-preferences";
 import { visibleRailItems } from "./rail-items";
+import {
+  applyRailOrder,
+  readRailOrder,
+  reorderRailIds,
+  resetRailOrder,
+  writeRailOrder,
+  RAIL_ORDER_EVENT,
+} from "./rail-order";
 import { useAiAvailability } from "@/hooks/use-ai-availability";
 
 export type RailView =
@@ -52,6 +61,13 @@ type RailItem =
     }
   | { kind: "tab"; tabType: TabType; icon: React.ReactNode; title: string }
   | { kind: "separator" };
+
+/** Stable DOM/data id of a rail item used for drag-reorder bookkeeping. */
+function idOf(item: RailItem): string {
+  if (item.kind === "tab") return `tab:${item.tabType}`;
+  if (item.kind === "separator") return `sep`;
+  return item.view;
+}
 
 function buildRailButtons(
   splitMode: SplitMode,
@@ -143,6 +159,22 @@ export function AppRail({
     rightDockable?: boolean;
   } | null>(null);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  // User-dragged order of rail buttons; ids missing from the list keep the
+  // default order at the end (new upstream items never break the layout).
+  const [railOrder, setRailOrder] = useState<string[]>(() => readRailOrder());
+  const dragIdRef = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sync = () => setRailOrder(readRailOrder());
+    window.addEventListener(RAIL_ORDER_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(RAIL_ORDER_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -281,6 +313,74 @@ export function AppRail({
     ...(aiEnabled ? [] : ["ai"]),
   ]);
   const railButtons = buildRailButtons(splitMode, t, effectiveHiddenTabs);
+  // Apply the saved order to the visible buttons; separators keep relative
+  // positions because sort is stable and they carry no id (kind === "separator"
+  // has none), so they drift with the block they sit between.
+  const orderedRailButtons = applyRailOrder(
+    railButtons as never,
+    railOrder,
+  ) as typeof railButtons;
+
+  /** Persists the new order after a drop on a button row. */
+  const commitReorder = (dragId: string, targetId: string, before: boolean) => {
+    const next = reorderRailIds(
+      railOrder.length ? railOrder : orderedRailButtons.map(idOf),
+      dragId,
+      targetId,
+      before,
+    );
+    if (next.length) {
+      setRailOrder(next);
+      writeRailOrder(next);
+    }
+  };
+
+  /** HTML5 drag source: announces which rail id is being dragged. */
+  const dragProps = (id: string) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      dragIdRef.current = id;
+      setDraggingId(id);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", `rail:${id}`);
+    },
+    onDragEnd: () => {
+      dragIdRef.current = null;
+      setDraggingId(null);
+      setDragOverId(null);
+    },
+  });
+
+  /** Drop target: computes before/after from the pointer position inside the row. */
+  const dropProps = (id: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!dragIdRef.current || dragIdRef.current === id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = e.currentTarget.getBoundingClientRect();
+      const after = e.clientY - rect.top > rect.height / 2;
+      setDragOverId(`${id}:${after ? "after" : "before"}`);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+      setDragOverId((cur) => (cur?.startsWith(`${id}:`) ? null : cur));
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      const dragId = dragIdRef.current;
+      const over = dragOverId;
+      setDragOverId(null);
+      dragIdRef.current = null;
+      setDraggingId(null);
+      if (!dragId || dragId === id) return;
+      // Trust the last dragOver marker, fall back to pointer position.
+      const after = over
+        ? over.endsWith(":after")
+        : e.clientY - e.currentTarget.getBoundingClientRect().top >
+          e.currentTarget.getBoundingClientRect().height / 2;
+      commitReorder(dragId, id, !after);
+    },
+  });
 
   const togglePinned = () => {
     setRailPreference("pinAppRail", !pinned);
@@ -313,35 +413,48 @@ export function AppRail({
       }}
     >
       <div className="flex flex-col flex-1 gap-1 overflow-y-auto scrollbar-none min-h-0">
-        {railButtons.map((item, i) =>
-          item.kind === "separator" ? (
-            <div
-              key={`sep-${i}`}
-              className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
-              style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
-            />
-          ) : "tabType" in item ? (
-            <button
-              key={item.tabType}
-              onClick={() => onOpenTab?.(item.tabType)}
-              style={btnStyle}
-              className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60`}
-            >
-              <span
-                className="shrink-0 flex items-center justify-center"
-                style={{ width: 16, height: 16 }}
+        {orderedRailButtons.map((item, i) => {
+          if (item.kind === "separator")
+            return (
+              <div
+                key={`sep-${i}`}
+                className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
+                style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
+              />
+            );
+          if ("tabType" in item) {
+            const id = idOf(item);
+            const dropActive = dragOverId?.startsWith(`${id}:`);
+            return (
+              <button
+                key={item.tabType}
+                onClick={() => onOpenTab?.(item.tabType)}
+                style={btnStyle}
+                className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60 ${
+                  draggingId === id ? "opacity-40" : ""
+                } ${dropActive ? "ring-1 ring-accent-brand" : ""}`}
+                {...dragProps(id)}
+                {...dropProps(id)}
               >
-                {item.icon}
-              </span>
-              <span
-                className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
-                  railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
-                }`}
-              >
-                {item.title}
-              </span>
-            </button>
-          ) : (
+                <span
+                  className="shrink-0 flex items-center justify-center"
+                  style={{ width: 16, height: 16 }}
+                >
+                  {item.icon}
+                </span>
+                <span
+                  className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
+                    railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
+                  }`}
+                >
+                  {item.title}
+                </span>
+              </button>
+            );
+          }
+          const id = idOf(item);
+          const dropActive = dragOverId?.startsWith(`${id}:`);
+          return (
             <button
               key={item.view}
               onClick={(e) => {
@@ -378,7 +491,11 @@ export function AppRail({
                 sidebarOpen && railView === item.view
                   ? "text-accent-brand bg-accent-brand/10"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              } ${draggingId === id ? "opacity-40" : ""} ${
+                dropActive ? "ring-1 ring-accent-brand" : ""
               }`}
+              {...dragProps(id)}
+              {...dropProps(id)}
             >
               <span
                 className="shrink-0 flex items-center justify-center"
@@ -397,8 +514,8 @@ export function AppRail({
                 <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-accent-brand" />
               )}
             </button>
-          ),
-        )}
+          );
+        })}
       </div>
 
       <div className="shrink-0 flex flex-col gap-1 border-t border-border pt-1 pb-1">
@@ -585,6 +702,21 @@ export function AppRail({
             </span>
             {t("newUi.sidebar.userProfile.expandAppRailOnHover")}
           </button>
+          {railOrder.length > 0 && (
+            <button
+              onClick={() => {
+                resetRailOrder();
+                setRailOrder([]);
+                setMenuPos(null);
+              }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground"
+            >
+              <span className="shrink-0 w-3 flex items-center justify-center">
+                <RotateCcw className="size-3" />
+              </span>
+              {t("nav.resetRailOrder")}
+            </button>
+          )}
           <div className="h-px bg-border my-1" />
           <button
             onClick={() => {

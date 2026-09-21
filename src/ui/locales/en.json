@@ -706,6 +706,7 @@
     "multiPanelHintTabHow": "Ctrl+click its rail icon, or use the button in this header.",
     "multiPanelHintDockHow": "Right-click its rail icon, or use the panel icon in the tab bar.",
     "sidebarSettings": "Sidebar Settings...",
+    "resetRailOrder": "Reset rail order",
     "hosts": "Hosts",
     "snippets": "Snippets",
     "macros": "Macros",
@@ -4687,6 +4688,22 @@
     "pathPlaceholder": "/path/to/folder",
     "go": "Open folder",
     "invalidPath": "Enter an absolute path, e.g. /Users/name/project",
-    "retry": "Retry"
+    "retry": "Retry",
+    "unsaved": "Unsaved changes",
+    "saved": "Saved",
+    "saveHint": "Save (Cmd/Ctrl+S)",
+    "save": "Save",
+    "reload": "Reload from disk",
+    "menuOpen": "Open",
+    "menuOpenFolder": "Open folder",
+    "menuCopy": "Copy",
+    "menuPaste": "Paste",
+    "reveal": "Reveal in file manager",
+    "newFile": "New file",
+    "newFolder": "New folder",
+    "duplicate": "Duplicate",
+    "copyPath": "Copy path",
+    "rename": "Rename",
+    "delete": "Move to trash"
   }
 }

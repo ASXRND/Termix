@@ -106,6 +106,10 @@ const LocalFileExplorer = lazy(() =>
     default: m.LocalFileExplorer,
   })),
 );
+import {
+  fileTabLabel,
+  findFileTabId,
+} from "@/features/local-explorer/localFileTabs";
 
 const SessionLogsPanel = lazy(() =>
   import("@/sidebar/SessionLogsPanel").then((m) => ({
@@ -2530,6 +2534,28 @@ export function AppShell({
                 // The panel can live in either dock; close whichever hosts it.
                 if (rightRailView === "local-explorer") setRightRailView(null);
                 else setSidebarOpen(false);
+              }}
+              onOpenFile={(target) => {
+                // VS Code parity: clicking a file already open in a tab
+                // focuses that tab instead of opening a duplicate.
+                const existing = findFileTabId(tabs, target.absPath);
+                if (existing) {
+                  setActiveTabId(existing);
+                  return;
+                }
+                const id = `local-file-${Date.now()}`;
+                setTabs((prev) => [
+                  ...prev,
+                  {
+                    id,
+                    instanceId: `local-file-${crypto.randomUUID()}`,
+                    type: "local-file",
+                    label: fileTabLabel(target),
+                    openedAt: Date.now(),
+                    localFile: target,
+                  },
+                ]);
+                setActiveTabId(id);
               }}
             />
           </div>

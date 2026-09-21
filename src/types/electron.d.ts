@@ -208,7 +208,48 @@ export interface ElectronAPI {
       rel: string,
     ): Promise<{ path: string; entries: LocalFsEntry[]; error?: string }>;
     read(root: string, rel: string): Promise<LocalFsReadResult>;
+    /** Saves an editable text file back to disk (editor tabs). */
+    write(
+      root: string,
+      rel: string,
+      content: string,
+    ): Promise<{ ok?: boolean; error?: string }>;
     open(target: string): Promise<boolean>;
+    /** Reveals the entry in the OS file manager. */
+    reveal(target: string): Promise<boolean>;
+    rename(
+      root: string,
+      rel: string,
+      name: string,
+    ): Promise<{ ok?: boolean; name?: string; error?: string }>;
+    /** Moves the entry to the OS trash (recoverable delete). */
+    trash(root: string, rel: string): Promise<{ ok?: boolean; error?: string }>;
+    duplicate(
+      root: string,
+      rel: string,
+    ): Promise<{ ok?: boolean; name?: string; error?: string }>;
+    copyInto(
+      root: string,
+      sourceRel: string,
+      destDirRel: string,
+    ): Promise<{ ok?: boolean; name?: string; error?: string }>;
+    /** Paths currently on the system clipboard as file references. */
+    clipboardFiles(): Promise<{ paths: string[]; error?: string }>;
+    /** Puts absolute paths on the system clipboard as file references. */
+    writeClipboardFiles(
+      paths: string[],
+    ): Promise<{ ok?: boolean; error?: string }>;
+    /** Copies an absolute path (OS clipboard source) into a root folder. */
+    copyExternalInto(
+      root: string,
+      sourceAbs: string,
+      destDirRel: string,
+    ): Promise<{ ok?: boolean; name?: string; error?: string }>;
+    create(
+      root: string,
+      dirRel: string,
+      kind: "file" | "folder",
+    ): Promise<{ ok?: boolean; name?: string; error?: string }>;
   };
 }
 

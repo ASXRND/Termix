@@ -12,25 +12,55 @@ import { Button } from "@/components/button";
 import {
   firstListable,
   localFsAvailable,
+  localFsClipboardFiles,
+  localFsCopyExternalInto,
+  localFsCopyInto,
+  localFsCreate,
+  localFsDuplicate,
   localFsHome,
   localFsList,
-  localFsRead,
+  localFsRename,
+  localFsReveal,
+  localFsTrash,
   normalizeDir,
   parentOfHome,
 } from "./localFsApi";
 import { getLocalCwd, subscribeLocalCwd } from "./localCwdStore";
-import { addTreeChild, collapseTree, type LocalFsNode } from "./localFsTree";
+import {
+  addTreeChild,
+  collapseTree,
+  joinRel,
+  type LocalFsNode,
+} from "./localFsTree";
+import {
+  entryFromNode,
+  getCopiedEntry,
+  setCopiedEntry,
+} from "./localClipboard";
+import {
+  LocalFileContextMenu,
+  type LocalMenuAction,
+} from "./LocalFileContextMenu";
+import { LocalFileNameDialog } from "./LocalFileNameDialog";
 import { LocalFileTree } from "./LocalFileTree";
-import { PreviewSection, type PreviewState } from "./LocalFilePreview";
+import type { LocalFileTarget } from "@/types/ui-types";
+import { fileTarget } from "./localFileTabs";
 
 /**
  * VS Code style local file explorer for the right dock. Lives outside the
  * split container, so it stays visible no matter how the terminal area is
  * split. Reads the local FS over IPC (electron/local-fs.cjs) and follows the
  * working directory the local shell reports over OSC 7, with a manual path box
- * for when the user wants to pin a folder instead.
+ * for when the user wants to pin a folder instead. Files open as editor tabs
+ * via `onOpenFile`; the tree itself only browses and manages entries.
  */
-export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
+export function LocalFileExplorer({
+  onClose,
+  onOpenFile,
+}: {
+  onClose: () => void;
+  onOpenFile: (target: LocalFileTarget) => void;
+}) {
   const { t } = useTranslation();
   const [booting, setBooting] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
@@ -44,7 +74,16 @@ export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedRel, setSelectedRel] = useState<string | null>(null);
-  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    node: LocalFsNode | null;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [nameDialog, setNameDialog] = useState<
+    | { mode: "rename"; rel: string; initial: string }
+    | { mode: "newFile" | "newFolder"; dirRel: string }
+    | null
+  >(null);
 
   // Resolve the starting folder once: the home dir (so the tree does not open
   // at the device root), or wherever the local shell already reported being.
@@ -126,7 +165,6 @@ export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
     setTree(null);
     setExpanded({});
     setSelectedRel(null);
-    setPreview(null);
     setLoadError(null);
     void loadChildren(root, "");
   }, [root, loadChildren]);
@@ -170,29 +208,151 @@ export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
 
   const selectNode = useCallback(
     (node: LocalFsNode) => {
+      setSelectedRel(node.rel);
       if (node.isDir) {
-        setSelectedRel(node.rel);
         toggleDir(node);
         return;
       }
-      if (node.children && node.children.length > 0) return;
-      setSelectedRel(node.rel);
-      setPreview({
-        title: node.name,
-        absPath: node.absPath,
-        result: null,
-        loading: true,
-      });
-      void (async () => {
-        const result = await localFsRead(root ?? "", node.rel);
-        setPreview((prev) =>
-          prev && prev.absPath === node.absPath
-            ? { ...prev, loading: false, result }
-            : prev,
-        );
-      })();
+      // Files open as editor tabs; AppShell dedupes by absolute path.
+      if (root) onOpenFile(fileTarget(root, node.absPath, node.name));
     },
-    [root, toggleDir],
+    [root, toggleDir, onOpenFile],
+  );
+
+  const openContextMenu = useCallback(
+    (node: LocalFsNode, x: number, y: number) => {
+      setSelectedRel(node.rel);
+      setContextMenu({ node, x, y });
+    },
+    [],
+  );
+
+  // ---- context-menu operations -------------------------------------------
+
+  const handleMenuAction = useCallback(
+    async (action: LocalMenuAction) => {
+      if (!root) return;
+      const node = contextMenu?.node ?? null;
+      switch (action) {
+        case "open": {
+          if (!node) return;
+          if (node.isDir) {
+            if (!expanded[node.rel]) toggleDir(node);
+          } else {
+            onOpenFile(fileTarget(root, node.absPath, node.name));
+          }
+          return;
+        }
+        case "openExternal":
+          if (node) void window.electronAPI.localFs.open(node.absPath);
+          return;
+        case "reveal":
+          if (node) void localFsReveal(node.absPath);
+          return;
+        case "copy":
+          if (node) setCopiedEntry(entryFromNode(root, node));
+          return;
+        case "paste": {
+          // Paste lands in the folder under the cursor; on a file it lands in
+          // that file's parent folder (VS Code behaviour).
+          const destDirRel = node?.isDir
+            ? node.rel
+            : (node?.rel ?? "").includes("/")
+              ? (node?.rel ?? "").slice(0, (node?.rel ?? "").lastIndexOf("/"))
+              : "";
+          // Prefer the in-app clipboard; fall back to files copied in the OS
+          // file manager (Finder puts file references on the clipboard).
+          const clip = getCopiedEntry();
+          if (clip) {
+            const res = await localFsCopyInto(clip.root, clip.rel, destDirRel);
+            if (res.ok) void refresh();
+            return;
+          }
+          const system = await localFsClipboardFiles();
+          if (!system.paths.length) return;
+          for (const sourceAbs of system.paths) {
+            const res = await localFsCopyExternalInto(
+              root,
+              sourceAbs,
+              destDirRel,
+            );
+            if (res.error) return;
+          }
+          void refresh();
+          return;
+        }
+        case "duplicate":
+          if (!node) return;
+          {
+            const res = await localFsDuplicate(root, node.rel);
+            if (res.ok) void refresh();
+          }
+          return;
+        case "copyPath":
+          if (node) void navigator.clipboard.writeText(node.absPath);
+          return;
+        case "rename":
+          if (node && node.rel !== "")
+            setNameDialog({
+              mode: "rename",
+              rel: node.rel,
+              initial: node.name,
+            });
+          return;
+        case "delete":
+          if (!node || node.rel === "") return;
+          {
+            const res = await localFsTrash(root, node.rel);
+            if (res.ok) {
+              setSelectedRel(null);
+              void refresh();
+            }
+          }
+          return;
+        case "newFile":
+        case "newFolder":
+          setNameDialog({ mode: action, dirRel: node?.rel ?? "" });
+          return;
+        case "refresh":
+          void refresh();
+          return;
+      }
+    },
+    [root, contextMenu, expanded, toggleDir, onOpenFile, refresh],
+  );
+
+  const submitNameDialog = useCallback(
+    async (value: string) => {
+      if (!root) return;
+      const dialog = nameDialog;
+      if (!dialog) return;
+      if (dialog.mode === "rename") {
+        const parentRel = dialog.rel.includes("/")
+          ? dialog.rel.slice(0, dialog.rel.lastIndexOf("/"))
+          : "";
+        const res = await localFsRename(root, dialog.rel, value);
+        if (res.ok) {
+          setSelectedRel(joinRel(parentRel, res.name ?? value));
+          void refresh();
+        }
+      } else {
+        const res = await localFsCreate(
+          root,
+          dialog.dirRel,
+          dialog.mode === "newFolder" ? "folder" : "file",
+        );
+        if (res.ok) {
+          if (dialog.mode === "newFolder")
+            setExpanded((prev) => ({
+              ...prev,
+              [joinRel(dialog.dirRel, res.name ?? value)]: false,
+            }));
+          void refresh();
+        }
+      }
+      setNameDialog(null);
+    },
+    [root, nameDialog, refresh],
   );
 
   const goToRoot = useCallback(() => {
@@ -202,7 +362,6 @@ export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
     setPathError(null);
     if (root === home) {
       setSelectedRel(null);
-      setPreview(null);
       void loadChildren(home, "");
       return;
     }
@@ -365,12 +524,36 @@ export function LocalFileExplorer({ onClose }: { onClose: () => void }) {
             selectedRel={selectedRel}
             onToggle={toggleDir}
             onSelect={selectNode}
+            onContextMenu={openContextMenu}
           />
         )}
       </div>
 
-      {preview && (
-        <PreviewSection preview={preview} onClose={() => setPreview(null)} />
+      {contextMenu && (
+        <LocalFileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          isDirSelected={contextMenu.node?.isDir ?? false}
+          isFileSelected={contextMenu.node ? !contextMenu.node.isDir : false}
+          hasClipboard={Boolean(getCopiedEntry())}
+          onAction={(action) => void handleMenuAction(action)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {nameDialog && (
+        <LocalFileNameDialog
+          title={t(
+            nameDialog.mode === "rename"
+              ? "localExplorer.rename"
+              : nameDialog.mode === "newFile"
+                ? "localExplorer.newFile"
+                : "localExplorer.newFolder",
+          )}
+          initialValue={nameDialog.mode === "rename" ? nameDialog.initial : ""}
+          onCancel={() => setNameDialog(null)}
+          onSubmit={(value) => void submitNameDialog(value)}
+        />
       )}
     </div>
   );

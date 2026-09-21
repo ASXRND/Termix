@@ -28,6 +28,7 @@ import {
   ScrollText,
   Sparkles,
   Workflow,
+  FileText,
 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
@@ -60,6 +61,11 @@ const TerminalFeature = lazy(loadTerminalFeature);
 const LocalTerminal = lazy(() =>
   import("@/features/local-terminal/LocalTerminal").then((m) => ({
     default: m.LocalTerminal,
+  })),
+);
+const LocalFileTab = lazy(() =>
+  import("@/features/local-explorer/LocalFileTab").then((m) => ({
+    default: m.LocalFileTab,
   })),
 );
 const MobileTerminalKeyboard = lazy(() =>
@@ -285,6 +291,8 @@ export function tabIcon(type: TabType) {
       return <Terminal className="size-3.5" />;
     case "local-terminal":
       return <TerminalSquare className="size-3.5" />;
+    case "local-file":
+      return <FileText className="size-3.5" />;
     case "rdp":
       return <Monitor className="size-3.5" />;
     case "vnc":
@@ -490,6 +498,9 @@ export function renderTabContent(
       return withTabSuspense(
         <LocalTerminal instanceId={tab.instanceId} isVisible={isVisible} />,
       );
+
+    case "local-file":
+      return withTabSuspense(<LocalFileTab tab={tab} isVisible={isVisible} />);
 
     case "files":
       if (!host)

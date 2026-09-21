@@ -114,7 +114,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
     home: () => ipcRenderer.invoke("local-fs:home"),
     list: (root, rel) => ipcRenderer.invoke("local-fs:list", root, rel),
     read: (root, rel) => ipcRenderer.invoke("local-fs:read", root, rel),
+    write: (root, rel, content) =>
+      ipcRenderer.invoke("local-fs:write", root, rel, content),
     open: (target) => ipcRenderer.invoke("local-fs:open", target),
+    reveal: (target) => ipcRenderer.invoke("local-fs:reveal", target),
+    rename: (root, rel, name) =>
+      ipcRenderer.invoke("local-fs:rename", root, rel, name),
+    trash: (root, rel) => ipcRenderer.invoke("local-fs:trash", root, rel),
+    duplicate: (root, rel) =>
+      ipcRenderer.invoke("local-fs:duplicate", root, rel),
+    copyInto: (root, sourceRel, destDirRel) =>
+      ipcRenderer.invoke("local-fs:copy-into", root, sourceRel, destDirRel),
+    create: (root, dirRel, kind) =>
+      ipcRenderer.invoke("local-fs:create", root, dirRel, kind),
+    clipboardFiles: () => ipcRenderer.invoke("local-fs:clipboard-files"),
+    writeClipboardFiles: (paths) =>
+      ipcRenderer.invoke("local-fs:clipboard-write-files", paths),
+    copyExternalInto: (root, sourceAbs, destDirRel) =>
+      ipcRenderer.invoke(
+        "local-fs:copy-external-into",
+        root,
+        sourceAbs,
+        destDirRel,
+      ),
   },
 
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

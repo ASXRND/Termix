@@ -79,6 +79,7 @@ interface LocalFileTreeProps {
   selectedRel: string | null;
   onToggle: (node: LocalFsNode) => void;
   onSelect: (node: LocalFsNode) => void;
+  onContextMenu?: (node: LocalFsNode, x: number, y: number) => void;
 }
 
 export function LocalFileTree({
@@ -87,6 +88,7 @@ export function LocalFileTree({
   selectedRel,
   onToggle,
   onSelect,
+  onContextMenu,
 }: LocalFileTreeProps) {
   if (!nodes) return null;
   return (
@@ -100,6 +102,7 @@ export function LocalFileTree({
           selectedRel={selectedRel}
           onToggle={onToggle}
           onSelect={onSelect}
+          onContextMenu={onContextMenu}
         />
       ))}
     </div>
@@ -113,6 +116,7 @@ interface TreeNodeProps {
   selectedRel: string | null;
   onToggle: (node: LocalFsNode) => void;
   onSelect: (node: LocalFsNode) => void;
+  onContextMenu?: (node: LocalFsNode, x: number, y: number) => void;
 }
 
 function TreeNode({
@@ -122,6 +126,7 @@ function TreeNode({
   selectedRel,
   onToggle,
   onSelect,
+  onContextMenu,
 }: TreeNodeProps) {
   const isOpen =
     node.isDir && (node.rel === ROOT_REL ? true : Boolean(expanded[node.rel]));
@@ -136,6 +141,10 @@ function TreeNode({
         aria-expanded={node.isDir ? isOpen : undefined}
         tabIndex={0}
         onClick={() => onSelect(node)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu?.(node, event.clientX, event.clientY);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -191,6 +200,7 @@ function TreeNode({
               selectedRel={selectedRel}
               onToggle={onToggle}
               onSelect={onSelect}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
