@@ -91,6 +91,25 @@ export function collapseTree(
   return next;
 }
 
+/** What a click on a folder's chevron (or on its row) should do. */
+export type DirToggleAction = "collapse" | "load" | "expand";
+
+/**
+ * Maps a folder click to an action. `collapseTree` drops the key from the
+ * expanded map while the listing stays in `node.children`, so "not expanded"
+ * has two meanings: a folder that was never opened (children === null, needs a
+ * listing) and one the user merely collapsed (children present, only needs the
+ * flag back). Without that distinction a collapsed folder stayed shut forever —
+ * the old `children === null` check silently did nothing on the second click.
+ */
+export function dirToggleAction(
+  expanded: Record<string, boolean>,
+  node: Pick<LocalFsNode, "rel" | "children">,
+): DirToggleAction {
+  if (expanded[node.rel]) return "collapse";
+  return node.children === null ? "load" : "expand";
+}
+
 const relDepth = (rel: string) =>
   rel === ROOT_REL ? 0 : rel.split("/").length;
 

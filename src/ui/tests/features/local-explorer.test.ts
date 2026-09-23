@@ -3,6 +3,7 @@ import {
   addTreeChild,
   buildChildren,
   collapseTree,
+  dirToggleAction,
   findNode,
   joinRel,
   rebuildTree,
@@ -92,6 +93,36 @@ describe("collapseTree", () => {
       "docs",
     );
     expect(Object.keys(expanded).sort()).toEqual(["", "other"]);
+  });
+});
+
+describe("dirToggleAction", () => {
+  it("collapses an expanded folder", () => {
+    expect(dirToggleAction({ docs: true }, { rel: "docs", children: [] })).toBe(
+      "collapse",
+    );
+  });
+
+  it("loads a folder that has never been opened", () => {
+    expect(dirToggleAction({}, { rel: "docs", children: null })).toBe("load");
+  });
+
+  // Regression: closing a folder with the row chevron used to leave it stuck
+  // shut. collapseTree drops the expanded key but the listing stays in the
+  // tree, so the next click has to reopen it instead of doing nothing.
+  it("expands a collapsed folder whose listing is still cached", () => {
+    const node = { rel: "docs", children: [] as never[] };
+    const collapsed = collapseTree({ docs: true }, "docs");
+    expect(dirToggleAction(collapsed, node)).toBe("expand");
+    expect(dirToggleAction({ ...collapsed, docs: true }, node)).toBe(
+      "collapse",
+    );
+  });
+
+  it("loads a folder again after a collapse that never finished loading", () => {
+    const node = { rel: "docs", children: null };
+    expect(dirToggleAction({}, node)).toBe("load");
+    expect(dirToggleAction({ docs: true }, node)).toBe("collapse");
   });
 });
 

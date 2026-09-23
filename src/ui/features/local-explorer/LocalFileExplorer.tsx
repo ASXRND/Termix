@@ -31,6 +31,7 @@ import { getLocalCwd, subscribeLocalCwd } from "./localCwdStore";
 import {
   addTreeChild,
   collapseTree,
+  dirToggleAction,
   findNode,
   joinRel,
   ROOT_REL,
@@ -234,10 +235,17 @@ export function LocalFileExplorer({
   const toggleDir = useCallback(
     (node: LocalFsNode) => {
       if (!root) return;
-      if (expanded[node.rel]) {
-        setExpanded((prev) => collapseTree(prev, node.rel));
-      } else if (node.children === null) {
-        void loadChildren(root, node.rel);
+      switch (dirToggleAction(expanded, node)) {
+        case "collapse":
+          setExpanded((prev) => collapseTree(prev, node.rel));
+          return;
+        case "load":
+          // First open: the listing is fetched before the folder expands.
+          void loadChildren(root, node.rel);
+          return;
+        default:
+          // Already in memory, the user just collapsed it earlier.
+          setExpanded((prev) => ({ ...prev, [node.rel]: true }));
       }
     },
     [root, expanded, loadChildren],
